@@ -5,6 +5,7 @@ import type { VGraph } from './core/history';
 import { WorkflowFeed, type FeedEvent } from './feed';
 import { GraphView, STATE_COLOR, formatDuration } from './render';
 import { ReplayApi } from './replay';
+import { initSidebar } from './sidebar';
 import { ApiError, TemporalApi, type HistoryApi, type WorkflowSummary } from './temporal';
 import sample from './sample-history.json';
 
@@ -15,6 +16,12 @@ const el = {
   auto: $<HTMLInputElement>('auto'), fit: $('fit'), banner: $('banner'), empty: $('empty'),
   canvas: $<HTMLCanvasElement>('c'), detail: $('detail'), live: $('live'), liveText: $('live-text'),
 };
+
+const sidebar = initSidebar({
+  app: $('app'), side: $('side'), handle: $('resizer'),
+  collapse: $<HTMLButtonElement>('collapse'), expand: $<HTMLButtonElement>('expand'),
+  railBadge: $('rail-badge'), railDot: $('rail-dot'),
+});
 
 const STATUS_COLOR: Record<string, string> = {
   RUNNING: '#2F63C8', COMPLETED: '#1B7F63', CONTINUED_AS_NEW: '#1B7F63', FAILED: '#BF3A30',
@@ -85,6 +92,7 @@ const svg = (inner: string) => `<svg viewBox="0 0 16 16" aria-hidden="true">${in
 
 function renderFilters() {
   const failures = failureCount(items, filter);
+  sidebar.setFailures(failureCount(items, NO_FILTER));
   const chip = (label: string, icon: string, pressed: boolean, onClick: () => void, badge?: number) => {
     const b = h('button', { type: 'button', class: 'chip-btn', 'aria-pressed': String(pressed) });
     b.insertAdjacentHTML('afterbegin', svg(icon));   // icons are constants defined above
@@ -145,6 +153,7 @@ function trackChanges(fresh: WorkflowSummary[]) {
     lastStatus.set(k, w.status);
   }
   if (arrived.length) {
+    sidebar.flagNew();
     el.announce.textContent = arrived.length === 1
       ? `New workflow started: ${arrived[0].type} ${arrived[0].workflowId}`
       : `${arrived.length} new workflows started`;

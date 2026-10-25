@@ -23,6 +23,16 @@ TEMPORAL_UI=http://my-host:8233 npm run dev
 Pick a workflow on the left. A link such as `http://localhost:5173/#<workflowId>/<runId>`
 reopens the same run. **Replay sample** plays a recorded history back as a live run, without a server.
 
+## Resizing and collapsing the sidebar
+
+- Drag the thin handle on the sidebar's right edge to resize it. The width is limited to between 260 px and
+  45 % of the window (`MAX_RATIO` in `src/core/sidebar-size.ts`). Double-click the handle to reset to 340 px.
+- The handle is also reachable by keyboard: focus it, then use Left/Right (Shift for bigger steps), Home and End.
+- The chevron next to "Workflows" collapses the list to a narrow rail. The rail shows the number of failed
+  workflows and a dot when a new workflow arrives while it is collapsed; the dot clears when you expand.
+- Width and collapsed state are remembered in the browser (`localStorage`), and the width is re-clamped when
+  the window shrinks.
+
 ## Filtering the workflow list
 
 Chips above the list narrow it down. They combine (AND), except where two chips are opposites:
@@ -83,14 +93,17 @@ feed.start();
 
 ## What you see
 
-| Node | Comes from |
-|---|---|
-| Activity | `ActivityTask*` events (attempt count from the started event and from the pending-activity list) |
-| Local activity | `MarkerRecorded` with marker name `LocalActivity` |
-| Timer | `Workflow.sleep`, `Workflow.await` with timeout |
-| Child workflow | `StartChildWorkflowExecution*` / `ChildWorkflowExecution*` |
-| Signal, Update | `WorkflowExecutionSignaled`, `WorkflowExecutionUpdateAccepted` |
-| Workflow started / ended | first event and the closing event |
+| Shape | Meaning | Comes from |
+|---|---|---|
+| Thin circle | Workflow started | first event |
+| Thick circle | Workflow ended (colour tells how: completed, failed, timed out, canceled) | closing event |
+| Rounded rectangle | Activity | `ActivityTask*` events (attempt count from the started event and the pending-activity list) |
+| Dashed rounded rectangle | Local activity | `MarkerRecorded` with marker name `LocalActivity` |
+| Rounded rectangle inside a second outline | Child workflow (sub-workflow) | `StartChildWorkflowExecution*` / `ChildWorkflowExecution*` |
+| Small rectangle, rounded on the right | Signal or update received | `WorkflowExecutionSignaled`, `WorkflowExecutionUpdateAccepted` |
+| Double circle with a clock | Timer | `Workflow.sleep`, `Workflow.await` with timeout |
+
+Arrowheads show the direction of flow, and the links of the selected node turn blue.
 
 Node colour is the state: scheduled, running, retrying, completed, failed, timed out, canceled.
 Click a node for timings, decoded JSON input/result, the failure cause and its history events.
@@ -123,4 +136,6 @@ SPAWN_MS=9000 node scripts/mock-temporal-ui.mjs   # SPAWN_MS starts a new workfl
   Enum names are accepted in both `EVENT_TYPE_X` and `X` styles.
 - The dev server keeps history in memory, so restarting it clears the list.
 - `@comfyorg/litegraph` is archived; pin its version (it is pinned by `package-lock.json`).
+- Shapes are drawn in `src/render.ts` (`shapePath`, `onDrawBackground`, `onDrawForeground`): LiteGraph only fills an
+  invisible box behind each node, so any outline can be painted on top.
 - Check the licence of the LiteGraph code you ship before using this in a product.

@@ -8,19 +8,38 @@
 <body>
   <div id="app">
     <aside id="side" aria-label="Workflows">
-      <div class="side-head">
-        <h1>Workflows</h1>
-        <label class="field"><span>Namespace</span><input id="ns" value="default" spellcheck="false" /></label>
-        <label class="field"><span>Visibility query</span><input id="query" placeholder="WorkflowType = 'OrderWorkflow'" spellcheck="false" /></label>
-        <div class="row">
-          <button id="reload" type="button">Reload list</button>
-          <button id="sample" type="button" class="quiet">Replay sample</button>
-        </div>
+      <div id="rail">
+        <button id="expand" type="button" class="icon-btn" aria-label="Expand workflow list" aria-expanded="false" aria-controls="side-content">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+        </button>
+        <span id="rail-badge" class="chip-badge" data-n="1" hidden></span>
+        <span id="rail-dot" hidden title="New workflow"></span>
+        <span class="rail-label" aria-hidden="true">Workflows</span>
       </div>
-      <div id="filters" role="toolbar" aria-label="Filter workflows"></div>
-      <div id="new-note" hidden></div>
-      <ul id="list"></ul>
+
+      <div id="side-content">
+        <div class="side-head">
+          <div class="side-title">
+            <h1>Workflows</h1>
+            <button id="collapse" type="button" class="icon-btn" aria-label="Collapse workflow list" aria-expanded="true" aria-controls="side-content">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>
+            </button>
+          </div>
+          <label class="field"><span>Namespace</span><input id="ns" value="default" spellcheck="false" /></label>
+          <label class="field"><span>Visibility query</span><input id="query" placeholder="WorkflowType = 'OrderWorkflow'" spellcheck="false" /></label>
+          <div class="row">
+            <button id="reload" type="button">Reload list</button>
+            <button id="sample" type="button" class="quiet">Replay sample</button>
+          </div>
+        </div>
+        <div id="filters" role="toolbar" aria-label="Filter workflows"></div>
+        <div id="new-note" hidden></div>
+        <ul id="list"></ul>
+      </div>
       <div id="announce" class="sr-only" role="status" aria-live="polite"></div>
+
+      <div id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize workflow list" tabindex="0"
+           title="Drag to resize, double-click to reset"></div>
     </aside>
 
     <main id="main">

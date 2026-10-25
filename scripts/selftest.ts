@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { buildGraph, canon, decodePayloads } from '../src/core/history';
 import { layoutGraph } from '../src/core/layout';
+import { DEFAULT_WIDTH, MIN_WIDTH, clampWidth, maxWidth } from '../src/core/sidebar-size';
 import { NO_FILTER, applyFilter, failureCount, isUnfiltered } from '../src/core/filter';
 import { diffGraphs, isEmpty, isStructural, summarize } from '../src/core/diff';
 
@@ -88,6 +89,13 @@ assert.equal(ids({ status: 'failures', parent: true, time: 'hour' }), 'late');
 assert.equal(failureCount(list, NO_FILTER, NOW), 3);
 assert.equal(failureCount(list, { ...NO_FILTER, parent: true }, NOW), 2);   // badge follows the other filters
 assert.equal(failureCount(list, { ...NO_FILTER, status: 'running' }, NOW), 3); // and ignores the status chip itself
+
+// sidebar width limits
+assert.equal(maxWidth(1500), 675);                      // 45 % of the window
+assert.equal(clampWidth(900, 1500), 675);               // dragged too far
+assert.equal(clampWidth(100, 1500), MIN_WIDTH);         // dragged too small
+assert.equal(clampWidth(DEFAULT_WIDTH, 1500), DEFAULT_WIDTH);
+assert.equal(clampWidth(400, 500), MIN_WIDTH);          // tiny window: the floor wins
 
 const pos = layoutGraph(g);
 assert.equal(pos.size, g.nodes.length);

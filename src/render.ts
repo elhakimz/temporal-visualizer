@@ -1,8 +1,8 @@
-import { LGraph, LGraphCanvas, LGraphNode, LiteGraph, RenderShape } from '@comfyorg/litegraph';
+import { LGraph, LGraphCanvas, LGraphNode, LinkMarkerShape, LiteGraph, RenderShape, TitleMode } from '@comfyorg/litegraph';
 import '@comfyorg/litegraph/style.css';
 import type { NodeKind, NodeState, VGraph, VNode } from './core/history';
 import { isStructural, type GraphDiff } from './core/diff';
-import { layoutGraph } from './core/layout';
+import { layoutGraph, portY } from './core/layout';
 
 export const STATE_COLOR: Record<NodeState, { solid: string; tint: string; label: string }> = {
   scheduled: { solid: '#6F7F90', tint: '#EEF1F4', label: 'Scheduled' },
@@ -48,57 +48,144 @@ function fit(ctx: CanvasRenderingContext2D, text: string, maxW: number): string 
 
 const FLASH_MS = 1600;
 const TWEEN_MS = 280;
-const TITLE_H = 30;
 const reduceMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
+const INK = '#17222C';
+const MUTED = '#56626E';
+const LINK = '#7C8A98';
+const CLEAR = 'rgba(0,0,0,0)';
+const font = (weight: number | string, size: number) =>
+  `${weight} ${size}px "IBM Plex Sans", "Segoe UI", system-ui, sans-serif`;
+
+/**
+ * Outline of a node, grown outwards by `grow` px.
+ *  - start, end, timer: circles (events)
+ *  - signal, update:    rectangle with rounded corners on the right only
+ *  - everything else:   rounded rectangle (task)
+ */
+function shapePath(ctx: CanvasRenderingContext2D, kind: NodeKind, w: number, h: number, grow = 0) {
+  const x = -grow, y = -grow, ww = w + grow * 2, hh = h + grow * 2;
+  ctx.beginPath();
+  if (kind === 'start' || kind === 'end' || kind === 'timer') {
+    ctx.arc(w / 2, h / 2, w / 2 + grow, 0, Math.PI * 2);
+  } else if (kind === 'signal' || kind === 'update') {
+    const r = Math.min(16 + grow, hh / 2);
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + ww - r, y);
+    ctx.arcTo(x + ww, y, x + ww, y + r, r);
+    ctx.lineTo(x + ww, y + hh - r);
+    ctx.arcTo(x + ww, y + hh, x + ww - r, y + hh, r);
+    ctx.lineTo(x, y + hh);
+    ctx.closePath();
+  } else {
+    ctx.roundRect(x, y, ww, hh, 10 + grow);
+  }
+}
+
 class StepNode extends LGraphNode {
+  /** No title bar: the shape itself is the node (set per class in LiteGraph). */
+  static title_mode = TitleMode.NO_TITLE;
   v?: VNode;
   flashUntil = 0;
+
   constructor(title = 'Step') {
     super(title);
     this.serialize_widgets = false;
+    this.strokeStyles.selected = () => undefined;   // selection is drawn along the real outline below
   }
+
+  /** The shape: filled with the state tint, outlined in the state colour. */
+  onDrawBackground(ctx: CanvasRenderingContext2D): void {
+    const v = this.v;
+    if (!v) return;
+    const [w, h] = this.size;
+    const { solid, tint } = STATE_COLOR[v.state];
+    const active = v.state === 'running' || v.state === 'retrying';
+
+    ctx.save();
+    shapePath(ctx, v.kind, w, h);
+    ctx.fillStyle = tint;
+    ctx.fill();
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = solid;
+    ctx.lineWidth = v.kind === 'end' ? 4.5 : v.kind === 'start' ? 1.6 : active ? 3 : 2;
+    if (v.kind === 'localActivity') ctx.setLineDash([7, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (v.kind === 'child') {                  // sub-workflow: the task, wrapped in a second outline
+      shapePath(ctx, v.kind, w, h, 5);
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    }
+    if (v.kind === 'timer') {                  // intermediate event: inner ring and a clock
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(w / 2, h / 2, w / 2 - 4.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(w / 2, h / 2 - 9); ctx.lineTo(w / 2, h / 2); ctx.lineTo(w / 2 + 6, h / 2 + 3.5);
+      ctx.stroke();
+    }
+    if (this.selected) {
+      shapePath(ctx, v.kind, w, h, v.kind === 'child' ? 10 : 6);
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = '#2F63C8';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Text, and the fading outline that marks a state change. */
   onDrawForeground(ctx: CanvasRenderingContext2D): void {
     const v = this.v;
     if (!v || this.flags.collapsed) return;
-    const w = this.size[0];
-    const color = STATE_COLOR[v.state].solid;
-    const pad = 20;
-    ctx.save();
-    ctx.textBaseline = 'alphabetic';
-    ctx.font = '11px "IBM Plex Sans", "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = '#56626E';
-    ctx.fillText(KIND_NAME[v.kind], pad, 18);
+    const [w, h] = this.size;
+    const { solid } = STATE_COLOR[v.state];
+    const bad = STATE_COLOR.failed.solid;
+    const cx = w / 2;
 
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
     const line = statusLine(v);
-    if (line) {
-      ctx.font = '600 12px "IBM Plex Sans", "Segoe UI", system-ui, sans-serif';
-      ctx.fillStyle = color;
-      ctx.fillText(fit(ctx, line, w - pad * 2), pad, 38);
+    const shortFail = v.failure && (v.state === 'failed' || v.state === 'timedOut' || v.state === 'retrying' || v.kind === 'end');
+
+    if (v.kind === 'signal' || v.kind === 'update') {
+      ctx.font = font(600, 12);
+      ctx.fillStyle = INK;
+      ctx.fillText(fit(ctx, v.label, w - 30), cx - 4, h / 2 + 4.5);
+    } else if (v.kind === 'start' || v.kind === 'end' || v.kind === 'timer') {
+      let y = h + 17;
+      ctx.font = font(600, 12);
+      ctx.fillStyle = v.kind === 'end' ? solid : INK;
+      ctx.fillText(fit(ctx, v.label, 190), cx, y);
+      const sub = v.kind === 'end' ? (v.durationMs != null ? `after ${formatDuration(v.durationMs)}` : '') : v.kind === 'timer' ? line : '';
+      if (sub) { y += 15; ctx.font = font(500, 11); ctx.fillStyle = v.kind === 'timer' ? solid : MUTED; ctx.fillText(fit(ctx, sub, 190), cx, y); }
+      if (shortFail) { y += 14; ctx.font = font(400, 11); ctx.fillStyle = bad; ctx.fillText(fit(ctx, v.failure!, 230), cx, y); }
+    } else {
+      ctx.font = font(600, 13);
+      ctx.fillStyle = INK;
+      ctx.fillText(fit(ctx, v.label, w - 36), cx, 25);
+      if (line) { ctx.font = font(600, 12); ctx.fillStyle = solid; ctx.fillText(fit(ctx, line, w - 36), cx, 43); }
+      if (shortFail) { ctx.font = font(400, 11); ctx.fillStyle = bad; ctx.fillText(fit(ctx, v.failure!, w - 36), cx, 58); }
     }
-    if (v.failure && (v.state === 'failed' || v.state === 'timedOut' || v.state === 'retrying' || v.kind === 'end')) {
-      ctx.font = '11px "IBM Plex Sans", "Segoe UI", system-ui, sans-serif';
-      ctx.fillStyle = STATE_COLOR.failed.solid;
-      ctx.fillText(fit(ctx, v.failure, w - pad * 2), pad, line ? 54 : 38);
-    }
-    if (v.state === 'running' || v.state === 'retrying') {
-      ctx.fillStyle = color;
-      ctx.fillRect(0, 0, 4, this.size[1]);
-    }
-    // A state change outlines the whole node (title bar included) and fades out.
+
+    // A state change outlines the shape and fades out.
     const left = this.flashUntil - performance.now();
     if (left > 0) {
       ctx.globalAlpha = Math.min(1, left / FLASH_MS);
-      ctx.strokeStyle = color;
+      shapePath(ctx, v.kind, w, h, v.kind === 'child' ? 11 : 7);
+      ctx.strokeStyle = solid;
       ctx.lineWidth = 3;
-      ctx.strokeRect(-5, -TITLE_H - 5, w + 10, this.size[1] + TITLE_H + 10);
+      ctx.stroke();
     }
     ctx.restore();
   }
 }
 
 LiteGraph.registerNodeType('temporal/step', StepNode);
-LiteGraph.NODE_TITLE_COLOR = '#FFFFFF';
 LiteGraph.NODE_TEXT_COLOR = '#2B3640';
 
 type Pos = [number, number];
@@ -124,15 +211,27 @@ export class GraphView {
     this.canvas.show_info = false;
     this.canvas.background_image = '';
     this.canvas.render_canvas_border = false;
-    this.canvas.links_render_mode = LiteGraph.SPLINE_LINK;
+    this.canvas.links_render_mode = LiteGraph.STRAIGHT_LINK;
     this.canvas.connections_width = 2;
+    this.canvas.render_connections_border = false;   // plain lines, like sequence flows
+    this.canvas.render_connections_shadows = false;
+    this.canvas.linkMarkerShape = LinkMarkerShape.None;
     this.canvas.default_connection_color_byType = { flow: '#7C8A98' };
     this.canvas.default_connection_color_byTypeOff = { flow: '#7C8A98' };
     (this.canvas as unknown as { clear_background_color: string }).clear_background_color = '#F3F5F7';
+    // LiteGraph paints links of the selected node pure white, which vanishes on a light canvas.
+    // Skip that highlight and tint those links with the accent colour instead (see paintLinks).
+    const drawConnections = this.canvas.drawConnections.bind(this.canvas);
+    this.canvas.drawConnections = (ctx: CanvasRenderingContext2D) => {
+      const saved = this.canvas.highlighted_links;
+      this.canvas.highlighted_links = {};
+      try { drawConnections(ctx); } finally { this.canvas.highlighted_links = saved; }
+    };
     this.canvas.onSelectionChange = (selected) => {
       if (this.rebuilding) return;
       const first = Object.values(selected ?? {})[0] as StepNode | undefined;
       this.selectedId = first?.v?.id ?? null;
+      this.paintLinks();
       this.onSelect(first?.v ?? null);
     };
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -189,9 +288,9 @@ export class GraphView {
     if (!all.length) return;
     const pad = 40;
     const x0 = Math.min(...all.map((n) => n.pos[0])) - pad;
-    const y0 = Math.min(...all.map((n) => n.pos[1] - TITLE_H)) - pad;
+    const y0 = Math.min(...all.map((n) => n.pos[1])) - pad;
     const x1 = Math.max(...all.map((n) => n.pos[0] + n.size[0])) + pad;
-    const y1 = Math.max(...all.map((n) => n.pos[1] + n.size[1])) + pad;
+    const y1 = Math.max(...all.map((n) => n.pos[1] + n.size[1])) + pad + 44;   // room for labels under event circles
     const vw = this.el.clientWidth || 1;
     const vh = this.el.clientHeight || 1;
     const scale = Math.min(1, Math.max(MIN_READABLE_ZOOM, Math.min(vw / (x1 - x0), vh / (y1 - y0))));
@@ -237,13 +336,12 @@ export class GraphView {
   // ---------- internals ----------
 
   private paint(node: StepNode) {
-    const v = node.v!;
-    node.title = v.label;
-    node.color = STATE_COLOR[v.state].solid;
-    node.bgcolor = STATE_COLOR[v.state].tint;
-    node.boxcolor = STATE_COLOR[v.state].solid;
-    node.shape = v.kind === 'start' || v.kind === 'end' ? RenderShape.CARD
-      : v.kind === 'signal' || v.kind === 'update' ? RenderShape.BOX : RenderShape.ROUND;
+    // LiteGraph still fills a plain box behind the node; keep it invisible and draw the real shape ourselves.
+    node.title = node.v!.label;
+    node.color = CLEAR;
+    node.bgcolor = CLEAR;
+    node.boxcolor = CLEAR;
+    node.shape = RenderShape.BOX;
   }
 
   private flash(node: StepNode) {
@@ -265,12 +363,15 @@ export class GraphView {
 
     for (const v of g.nodes) {
       const p = placed.get(v.id)!;
-      const layoutPos: Pos = [p.x, p.y + TITLE_H];
+      const layoutPos: Pos = [p.x, p.y];
       const node = LiteGraph.createNode('temporal/step') as StepNode;
       node.v = v;
       this.paint(node);
-      for (let i = 0; i < p.inputs; i++) node.addInput('', 'flow');
-      if (v.kind !== 'end') node.addOutput('', 'flow');
+      // Links meet the outline: an arrowhead on the way in, nothing visible on the way out.
+      for (let i = 0; i < p.inputs; i++) {
+        node.addInput('', 'flow', { pos: [-2, portY(p.h, p.inputs, i)], shape: RenderShape.ARROW, color_on: LINK, color_off: LINK } as never);
+      }
+      if (v.kind !== 'end') node.addOutput('', 'flow', { pos: [p.w, p.h / 2], shape: RenderShape.GRID, color_on: CLEAR, color_off: CLEAR } as never);
       node.setSize([p.w, p.h]);
 
       const before = old.get(v.id);
@@ -309,7 +410,17 @@ export class GraphView {
     const keep = this.selectedId ? this.nodes.get(this.selectedId) : undefined;
     if (keep) this.canvas.selectItems([keep]);
     this.rebuilding = false;
+    this.paintLinks();
     this.startLoop();
+    this.canvas.setDirty(true, true);
+  }
+
+  /** Links touching the selected node are drawn in the accent colour. */
+  private paintLinks() {
+    const sel = this.selectedId ? this.nodes.get(this.selectedId) : undefined;
+    for (const link of this.graph.links.values()) {
+      (link as { color?: string }).color = sel && (link.origin_id === sel.id || link.target_id === sel.id) ? '#2F63C8' : undefined;
+    }
     this.canvas.setDirty(true, true);
   }
 
