@@ -1,0 +1,23 @@
+{
+  "name": "temporal-visualizer",
+  "version": "0.1.0",
+  "description": "Visualize Temporal workflow executions as a node graph (LiteGraph) from a local dev server",
+  "scripts": {
+    "dev": "vite --open",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "tsx scripts/selftest.ts",
+    "sample": "tsx scripts/make-sample.ts"
+  },
+  "dependencies": {
+    "@comfyorg/litegraph": "^0.17.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  },
+  "private": true,
+  "type": "module"
+}

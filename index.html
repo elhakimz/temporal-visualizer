@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Temporal workflow visualizer</title>
+</head>
+<body>
+  <div id="app">
+    <aside id="side" aria-label="Workflows">
+      <div class="side-head">
+        <h1>Workflows</h1>
+        <label class="field"><span>Namespace</span><input id="ns" value="default" spellcheck="false" /></label>
+        <label class="field"><span>Visibility query</span><input id="query" placeholder="WorkflowType = 'OrderWorkflow'" spellcheck="false" /></label>
+        <div class="row">
+          <button id="reload" type="button">Reload list</button>
+          <button id="sample" type="button" class="quiet">Replay sample</button>
+        </div>
+      </div>
+      <div id="filters" role="toolbar" aria-label="Filter workflows"></div>
+      <div id="new-note" hidden></div>
+      <ul id="list"></ul>
+      <div id="announce" class="sr-only" role="status" aria-live="polite"></div>
+    </aside>
+
+    <main id="main">
+      <div id="bar">
+        <div class="titles">
+          <h2 id="wf-title">No workflow selected</h2>
+          <span id="wf-status" class="chip" hidden></span>
+        </div>
+        <div class="row">
+          <span id="live" class="live" data-mode="idle"><span class="live-dot"></span><span id="live-text">Not connected</span></span>
+          <label class="check"><input id="auto" type="checkbox" checked /> Follow live updates</label>
+          <button id="fit" type="button">Fit to view</button>
+        </div>
+      </div>
+      <div id="banner" role="alert" hidden></div>
+      <div id="stage">
+        <canvas id="c"></canvas>
+        <div id="empty">
+          <p>Pick a workflow on the left to see its steps.</p>
+          <p class="hint">Nothing running yet? Start one against <code>localhost:7233</code>, or replay the built-in sample.</p>
+        </div>
+      </div>
+    </main>
+
+    <aside id="detail" aria-label="Details"></aside>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

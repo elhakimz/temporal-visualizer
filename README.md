@@ -1,35 +1,126 @@
-# Temporal Workflow Visualizer
+# Temporal workflow visualizer
 
-A browser-based viewer that draws Temporal workflow executions as a live node graph.
+Shows a Temporal workflow execution as a node graph, drawn with the
+[`@comfyorg/litegraph`](https://github.com/Comfy-Org/litegraph.js) fork of LiteGraph.
+It reads the event history of any workflow, so it works with the Java SDK
+(or any other SDK) and needs no changes to your workers.
 
-## Why this exists
+## Run it
 
-Temporal workflows are code. A workflow with parallel branches, retries, timers, signals
-and child workflows is hard to picture from the event list alone, and harder still to explain to
-someone who did not write it. This tool turns a workflow's event history into a graph you can
-read at a glance and watch while it runs.
+```bash
+temporal server start-dev        # your existing dev server: gRPC 7233, UI/HTTP 8233
+npm install
+npm run dev                      # opens http://localhost:5173
+```
 
-It reads history from the Temporal server, so it works with workflows written in any SDK
-(Java, Go, TypeScript, Python, .NET) and needs no changes to your workers or workflow code.
+The browser cannot speak gRPC, so the app calls the HTTP API served by the Temporal UI
+(port 8233) through Vite's dev proxy. If your UI runs elsewhere:
 
-## What it does
+```bash
+TEMPORAL_UI=http://my-host:8233 npm run dev
+```
 
-- **Draws each run as a graph.** Activities, local activities, timers, child workflows, signals
-  and updates are nodes, coloured by state: scheduled, running, retrying, completed, failed,
-  timed out, canceled.
-- **Updates live.** New steps and state changes appear as they happen, without a page refresh.
-  Changed nodes are outlined briefly, and a change log lists every transition.
-- **Shows what went wrong.** Click a node for timings, attempt count, the decoded JSON
-  input and result, the failure cause and its history events. Workflow task failures
-  (for example non-determinism errors) are shown as warnings.
-- **Keeps a live workflow list.** Filter by failures, running, top-level workflows, today
-  or the last hour. New workflows blink when they start, so you notice them straight away.
-- **Works without a server.** A built-in sample replays a recorded history as a live run.
+Pick a workflow on the left. A link such as `http://localhost:5173/#<workflowId>/<runId>`
+reopens the same run. **Replay sample** plays a recorded history back as a live run, without a server.
 
-## Who it is for
+## Filtering the workflow list
 
-- Developers building and debugging Temporal workflows who want to see execution flow,
-  retries and failures rather than read raw events.
-- Teams who need to explain or review a workflow's behaviour with people who do not read
-  workflow code.
+Chips above the list narrow it down. They combine (AND), except where two chips are opposites:
 
+| Chip | Shows |
+|---|---|
+| All | everything; clears the other chips |
+| Failures (count) | runs that failed or timed out; terminated runs are not counted. The badge shows how many a click would show, given the other chips. The icon is a smile at 0 and a frown otherwise |
+| Running | runs that are still open (replaces Failures, and the other way round) |
+| Parent | top-level workflows only; child workflows are hidden |
+| Today | started after local midnight (replaces Last 1h) |
+| Last 1h | started in the last hour |
+
+Filters apply to the loaded list (up to 100 runs from the visibility query). The list reloads in the
+background every 5 s, so Running, Failures and Last 1h stay current. The visibility query box still narrows
+what is loaded on the server side.
+
+### New workflows appear by themselves
+
+The list reloads every 2 s (and at once when you return to the tab). A run that was not in the previous
+listing is treated as new:
+
+- its row blinks three times (about 3.6 s) and keeps a **New** tag for 30 s; a re-render in the middle of the
+  blink continues it instead of restarting it
+- a row whose status changed (for example Running to Completed) gets one short yellow flash
+- if a new run is hidden by the active chips, or sits above the part of the list you scrolled to, a notice at
+  the top of the list says so, with **Show all** or **Jump to top**
+- screen readers are told "New workflow started: …"
+- with reduced-motion enabled in the OS, the blink becomes a steady highlight
+
+The first load, and any change of namespace or visibility query, only sets the baseline, so nothing blinks then.
+Keyboard focus stays on the row you were on while the list refreshes.
+
+## Live updates
+
+Opening a workflow starts a *feed* (`src/feed.ts`) that follows the run and emits typed events
+(`snapshot`, `update` with a node/edge diff, `mode`, `closed`, `error`). The canvas and the side panel
+are just subscribers, so nothing re-renders from scratch:
+
+- **State-only changes** (running, retrying, completed, failed, attempt count) edit the existing node in
+  place and outline it for about 1.5 s.
+- **New steps or links** rebuild the graph but keep every node where it is (including nodes you dragged);
+  new nodes slide out of their parent. The view follows the newest step while "Follow live updates" is on.
+- **Recent changes** in the side panel lists every transition with a time stamp.
+- **Transport:** the feed long-polls `.../history?waitNewEvent=true`, so new events arrive as soon as the
+  server has them. If the server answers immediately without events, or the route is missing, it switches
+  to polling once a second; the indicator in the top bar says which mode is active.
+  Retry counts are not events, so `describe` is refreshed every 1.5 s while the workflow runs.
+- Untick **Follow live updates** to freeze the picture; tick it again to catch up.
+
+To subscribe from your own code:
+
+```ts
+const feed = new WorkflowFeed(new TemporalApi('default'), workflowId, runId);
+feed.subscribe((e) => { if (e.type === 'update') console.log(e.messages); });
+feed.start();
+```
+
+## What you see
+
+| Node | Comes from |
+|---|---|
+| Activity | `ActivityTask*` events (attempt count from the started event and from the pending-activity list) |
+| Local activity | `MarkerRecorded` with marker name `LocalActivity` |
+| Timer | `Workflow.sleep`, `Workflow.await` with timeout |
+| Child workflow | `StartChildWorkflowExecution*` / `ChildWorkflowExecution*` |
+| Signal, Update | `WorkflowExecutionSignaled`, `WorkflowExecutionUpdateAccepted` |
+| Workflow started / ended | first event and the closing event |
+
+Node colour is the state: scheduled, running, retrying, completed, failed, timed out, canceled.
+Click a node for timings, decoded JSON input/result, the failure cause and its history events.
+Workflow task failures and timeouts (for example non-determinism errors) appear as warnings
+in the side panel when nothing is selected.
+
+## How edges are inferred
+
+History does not say which result a command depended on. The graph uses this rule:
+everything that finished since the previous batch of commands (activity done, timer fired,
+child closed, signal received) is a parent of the commands the next workflow task issues.
+That is exact for sequential code and for fork/join code (`Async.function` followed by
+`Promise.get`). It can over-connect when unrelated work runs concurrently, and local
+activities issued in the same task are shown as a chain.
+
+## Checks
+
+```bash
+npm test                 # parser, diff and layout checks against a generated Java-style history
+npm run sample           # regenerate src/sample-history.json
+SPAWN_MS=9000 node scripts/mock-temporal-ui.mjs   # SPAWN_MS starts a new workflow that often
+                         # fake UI API on :8234 with one finished and one live, long-polling workflow
+                         # (TEMPORAL_UI=http://localhost:8234 npm run dev)
+```
+
+## Notes
+
+- API paths used: `/api/v1/namespaces/{ns}/workflows` (list), `.../workflows/{id}/runs/{run}/events`
+  with a fallback to `.../history`, and `.../workflows/{id}/runs/{run}` (describe).
+  Enum names are accepted in both `EVENT_TYPE_X` and `X` styles.
+- The dev server keeps history in memory, so restarting it clears the list.
+- `@comfyorg/litegraph` is archived; pin its version (it is pinned by `package-lock.json`).
+- Check the licence of the LiteGraph code you ship before using this in a product.
