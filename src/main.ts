@@ -1,10 +1,12 @@
 import './styles.css';
 import { diffGraphs } from './core/diff';
 import { NO_FILTER, applyFilter, failureCount, isUnfiltered, matches, type ListFilter } from './core/filter';
-import type { VGraph } from './core/history';
+import type { HistoryEvent, VGraph } from './core/history';
+import { fmtOffset } from './core/timeline';
 import { WorkflowFeed, type FeedEvent } from './feed';
 import { GraphView, STATE_COLOR, formatDuration } from './render';
 import { ReplayApi } from './replay';
+import { Scrubber } from './scrubber';
 import { initSidebar } from './sidebar';
 import { ApiError, TemporalApi, type HistoryApi, type WorkflowSummary } from './temporal';
 import sample from './sample-history.json';
@@ -39,6 +41,19 @@ let changes: { id: number; time: string; text: string }[] = [];
 let changeSeq = 0;
 
 const view = new GraphView(el.canvas, (v) => { selectedId = v?.id ?? null; renderDetail(); });
+
+// Replay scrubber: steps through a finished run. Each step is applied to the canvas like a live update.
+const scrubber = new Scrubber($('scrubber'), (c) => {
+  graph = c.graph;
+  view.update(c.graph, c.diff);
+  renderDetail();
+});
+function offerReplay(events: HistoryEvent[], finalGraph: VGraph) {
+  if (finalGraph.status === 'RUNNING') return;
+  view.pinLayout(finalGraph);
+  scrubber.load(events, finalGraph);
+}
+function closeReplay() { scrubber.unload(); view.pinLayout(null); }
 
 // ---------- helpers ----------
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, string> = {}, ...kids: (string | Node)[]) {
@@ -295,6 +310,7 @@ function stopFeed() {
 
 function openWorkflow(workflowId: string, runId: string, source?: HistoryApi, opts: { resumeFrom?: VGraph | null } = {}) {
   stopFeed();
+  closeReplay();
   if (!source) { replay?.stop(); replay = null; }
   current = { workflowId, runId, sample: source !== undefined };
   if (!opts.resumeFrom) { graph = null; selectedId = null; changes = []; }
@@ -318,7 +334,7 @@ function onFeed(e: FeedEvent, resumeFrom: VGraph | null) {
       if (prev) view.update(e.graph, diffGraphs(prev, e.graph));
       else view.reset(e.graph, { fit: true });
       renderDetail();
-      if (e.graph.status !== 'RUNNING') setLive('closed');
+      if (e.graph.status !== 'RUNNING') { setLive('closed'); offerReplay(feed!.history, e.graph); }
       break;
     }
     case 'update': {
@@ -336,7 +352,7 @@ function onFeed(e: FeedEvent, resumeFrom: VGraph | null) {
       break;
     }
     case 'mode': setLive(e.mode); break;
-    case 'closed': setLive('closed'); renderHeader(e.graph); break;
+    case 'closed': setLive('closed'); renderHeader(e.graph); offerReplay(feed!.history, e.graph); break;
     case 'error': setLive('error'); showBanner(explain(e.error)); break;
   }
 }
@@ -396,11 +412,29 @@ function renderSummary(g: VGraph) {
     ...(start?.detail['Task queue'] ? [h('dt', {}, 'Task queue'), h('dd', {}, start.detail['Task queue'])] : []),
   ));
   if (end?.failure) parts.push(h('h4', {}, 'Workflow failure'), h('pre', { class: 'err' }, end.failure));
-  if (changes.length) {
+  if (scrubber.visible) {
+    parts.push(h('h4', {}, 'Timeline'), timelineList());
+  } else if (changes.length) {
     parts.push(h('h4', {}, 'Recent changes'), h('ul', { class: 'changes' }, ...changes.slice(0, 15).map((c, i) =>
       h('li', i === 0 ? { class: 'fresh' } : {}, h('span', { class: 'tm' }, c.time), h('span', {}, c.text)))));
   }
   el.detail.replaceChildren(...parts);
+}
+
+/** Clickable list of the run's steps; the current moment is highlighted and the rest are dimmed. */
+function timelineList(): HTMLElement {
+  const steps = scrubber.steps, p = scrubber.p;
+  const lo = Math.max(0, Math.min(p - 1 - 100, steps.length - 300)), hi = Math.min(steps.length, lo + 300);
+  const ul = h('ul', { class: 'timeline' });
+  for (let i = lo; i < hi; i++) {
+    const st = steps[i];
+    const li = h('li', { 'data-kind': st.kind, class: i + 1 === p ? 'cur' : i + 1 > p ? 'future' : '' },
+      h('span', { class: 'tm' }, fmtOffset(st.ms)), h('span', { class: 'wh' }, `${st.label} ${st.words}`));
+    li.addEventListener('click', () => { scrubber.pause(); scrubber.goto(i + 1, true); });
+    ul.append(li);
+  }
+  queueMicrotask(() => ul.querySelector('.cur')?.scrollIntoView({ block: 'nearest' }));
+  return ul;
 }
 
 // ---------- wiring ----------

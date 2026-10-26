@@ -23,6 +23,30 @@ TEMPORAL_UI=http://my-host:8233 npm run dev
 Pick a workflow on the left. A link such as `http://localhost:5173/#<workflowId>/<runId>`
 reopens the same run. **Replay sample** plays a recorded history back as a live run, without a server.
 
+## Replay scrubber
+
+Once a run has finished (or while you look at a run that has just closed), a control bar appears under the graph.
+It starts at the final state; move it back to see the run as it unfolded.
+
+- **Steps, not raw events.** A step is an event that changes what the graph shows (activity scheduled, started,
+  completed, timer fired, signal received, ...). Workflow-task bookkeeping is skipped, so every step changes something.
+  Workflow-task failures stay in as steps. A 45-event history is typically about 20 steps.
+- **The track.** Each tick is a step, coloured by outcome (red failures, green completions, blue signals). Drag the
+  playhead, click anywhere on the track, or hover for a tooltip with the time offset and what happened.
+- **Keyboard** (focus the track): Left/Right = one step, Shift or PageUp/PageDown = ten, Home/End = first/last,
+  Space = play or pause.
+- **Play** runs through the steps; the speed button cycles 1x, 2x, 4x, 0.5x. Pressing play at the end restarts from
+  the beginning.
+- **Time scale** spaces the ticks by real time instead of evenly, so gaps (a 5 s sleep, a slow activity) are visible,
+  and playback waits in proportion (long runs are compressed to about 24 s at 1x).
+- **Timeline** in the side panel (when no node is selected) lists every step with its offset. Click a row to jump to it;
+  steps still to come are dimmed. Selecting a node still shows the details of that node *at the chosen moment*.
+- Node positions stay where they are while you scrub, so you can follow one node through the run.
+- **Final state** jumps back to the end.
+
+The logic lives in `src/core/timeline.ts` (step building, positions, playback timing; covered by `npm test`) and the
+controls in `src/scrubber.ts`.
+
 ## Resizing and collapsing the sidebar
 
 - Drag the thin handle on the sidebar's right edge to resize it. The width is limited to between 260 px and

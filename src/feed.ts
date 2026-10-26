@@ -43,6 +43,9 @@ export class WorkflowFeed {
 
   constructor(private api: HistoryApi, readonly workflowId: string, readonly runId: string) {}
 
+  /** Every event received so far (the whole history once the run has closed). */
+  get history(): HistoryEvent[] { return this.events; }
+
   subscribe(fn: FeedListener): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);

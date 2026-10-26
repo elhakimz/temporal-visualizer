@@ -202,6 +202,8 @@ export class GraphView {
   private tweens: Tween[] = [];
   private raf = 0;
   private rebuilding = false;
+  /** While scrubbing, every moment is laid out like the final graph so nodes do not shuffle between steps. */
+  private pinned: Map<string, { x: number; cy: number }> | null = null;
   private selectedId: string | null = null;
   private resizeObserver: ResizeObserver;
 
@@ -250,6 +252,11 @@ export class GraphView {
   }
 
   // ---------- public API ----------
+
+  /** Pass the final graph to keep node positions stable while stepping through a run; null releases it. */
+  pinLayout(g: VGraph | null) {
+    this.pinned = g ? new Map([...layoutGraph(g)].map(([id, p]) => [id, { x: p.x, cy: p.y + p.h / 2 }])) : null;
+  }
 
   /** Replaces everything with a fresh graph (a different workflow, or the first load). */
   reset(g: VGraph, opts: { fit: boolean }) {
@@ -363,7 +370,8 @@ export class GraphView {
 
     for (const v of g.nodes) {
       const p = placed.get(v.id)!;
-      const layoutPos: Pos = [p.x, p.y];
+      const pin = this.pinned?.get(v.id);
+      const layoutPos: Pos = pin ? [pin.x, pin.cy - p.h / 2] : [p.x, p.y];
       const node = LiteGraph.createNode('temporal/step') as StepNode;
       node.v = v;
       this.paint(node);
