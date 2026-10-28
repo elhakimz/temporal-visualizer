@@ -1,6 +1,6 @@
 # Temporal workflow visualizer
 
-![Temporal Visualizer](Screenshot 2026-10-29 004541.png)
+![Temporal Visualizer](https://raw.githubusercontent.com/elhakimz/temporal-visualizer/refs/heads/main/screenshot.png)
 
 Shows a Temporal workflow execution as a node graph, drawn with the
 [`@comfyorg/litegraph`](https://github.com/Comfy-Org/litegraph.js) fork of LiteGraph.
