@@ -23,6 +23,53 @@ TEMPORAL_UI=http://my-host:8233 npm run dev
 Pick a workflow on the left. A link such as `http://localhost:5173/#<workflowId>/<runId>`
 reopens the same run. **Replay sample** plays a recorded history back as a live run, without a server.
 
+## Failure triage
+
+The side panel has two tabs, **Details** and **Failures**. The Failures tab carries a count badge, and a
+"Review N failures" shortcut appears in the Details tab when nothing is selected.
+
+**What counts as a failure**
+
+- an activity, local activity, child workflow or update that failed or timed out
+- an activity that failed an attempt and is still being retried (shown as *retrying*; once it eventually completes it is
+  no longer a failure, and if it runs out of attempts it becomes *failed*)
+- a workflow task that failed or timed out (for example a non-determinism error). These are not tied to a step, so
+  they expand inline instead of jumping
+- a workflow failure that only wraps one of the above is listed once: it is kept on the end node's details but not
+  counted again
+
+**Grouping.** *By type* groups by the root cause's type (the Java exception class, "Timeout (start to close)", ...) and
+shows an example message. *By message* groups by message with numbers, UUIDs and hex ids masked, so
+"balance 12.50 is below 129.90" and "balance 3.20 is below 55.00" land in one group. The biggest groups come first and
+the two biggest start open. **Copy as text** puts a summary of the groups on the clipboard for a ticket or chat.
+
+**Jump to the failing step.** Click an occurrence: the step is selected and centred on the canvas, outlined, and the
+Details tab opens on it. If the replay scrubber is rewound to before that failure, it moves forward to the failing
+moment first. The arrow at the end of a row expands the full failure in place without leaving the list.
+
+**Failure details** (Details tab, for a failing step, and inline in the list):
+
+- the root cause first: type, message and **full stack trace**
+- the wrapping failures (for example `ActivityFailure` with the activity name, id and retry state, or
+  `ChildWorkflowFailure`) folded under "Wrapped by N failures", each with its own trace
+- stack frames from the JDK, the Temporal SDK and dependencies (`java.*`, `io.temporal.*`, `node_modules`,
+  `site-packages`, ...) are greyed and your own frames are bold; **Hide framework frames** collapses the grey ones
+- non-retryable failures are tagged, and failures whose message and stack were encrypted by a failure converter are
+  decoded when they use the default JSON encoding
+- **Copy** buttons copy one stack trace, or the whole failure (outcome, cause chain and every stack) as plain text
+
+**IDs and links**
+
+- the workflow ID and run ID are chips under the title: click to copy. Activity, timer, child workflow and run IDs in the
+  details have a copy icon too
+- **Open in Temporal UI** (top right) opens the run's history page in a new tab, and a child workflow step has
+  **Open child in Temporal UI**. The link goes to the same server the dev proxy points at (`TEMPORAL_UI`). If your browser
+  reaches the UI at a different address than the proxy does (for example a container name), set
+  `TEMPORAL_UI_PUBLIC=http://localhost:8233`. The link is hidden for the built-in sample
+
+The logic is in `src/core/failure.ts` (parsing, grouping, stack classification, text export) and is covered by
+`npm test` with a fixture of many failure kinds (`npm run fixture:failing`; the mock server serves it as `order-F-6001`).
+
 ## Replay scrubber
 
 Once a run has finished (or while you look at a run that has just closed), a control bar appears under the graph.

@@ -2,7 +2,9 @@ import './styles.css';
 import { diffGraphs } from './core/diff';
 import { NO_FILTER, applyFilter, failureCount, isUnfiltered, matches, type ListFilter } from './core/filter';
 import type { HistoryEvent, VGraph } from './core/history';
+import { classifyFrame, failureText, groupFailures, groupsText, outcomeWords, shortType, type FailureItem } from './core/failure';
 import { fmtOffset } from './core/timeline';
+import { copyButton, h, iconOpen } from './dom';
 import { WorkflowFeed, type FeedEvent } from './feed';
 import { GraphView, STATE_COLOR, formatDuration } from './render';
 import { ReplayApi } from './replay';
@@ -16,7 +18,8 @@ const el = {
   ns: $<HTMLInputElement>('ns'), query: $<HTMLInputElement>('query'), list: $('list'),
   reload: $('reload'), filters: $('filters'), note: $('new-note'), announce: $('announce'), sample: $('sample'), title: $('wf-title'), status: $('wf-status'),
   auto: $<HTMLInputElement>('auto'), fit: $('fit'), banner: $('banner'), empty: $('empty'),
-  canvas: $<HTMLCanvasElement>('c'), detail: $('detail'), live: $('live'), liveText: $('live-text'),
+  canvas: $<HTMLCanvasElement>('c'), detail: $('detail-body'), live: $('live'), liveText: $('live-text'),
+  ids: $('wf-ids'), openUi: $<HTMLAnchorElement>('open-ui'), tabDetails: $('tab-details'), tabFailures: $('tab-failures'), failCount: $('fail-count'),
 };
 
 const sidebar = initSidebar({
@@ -39,8 +42,14 @@ let graph: VGraph | null = null;
 let selectedId: string | null = null;
 let changes: { id: number; time: string; text: string }[] = [];
 let changeSeq = 0;
+let tab: 'details' | 'failures' = 'details';
+let groupBy: 'type' | 'message' = 'type';
+/** The whole run as last loaded; stepping through the replay changes `graph`, not this. */
+let runGraph: VGraph | null = null;
+const groupOpen = new Map<string, boolean>();
+const traceOpen = new Set<string>();
 
-const view = new GraphView(el.canvas, (v) => { selectedId = v?.id ?? null; renderDetail(); });
+const view = new GraphView(el.canvas, (v) => { selectedId = v?.id ?? null; if (v) tab = 'details'; renderDetail(); });
 
 // Replay scrubber: steps through a finished run. Each step is applied to the canvas like a live update.
 const scrubber = new Scrubber($('scrubber'), (c) => {
@@ -56,12 +65,6 @@ function offerReplay(events: HistoryEvent[], finalGraph: VGraph) {
 function closeReplay() { scrubber.unload(); view.pinLayout(null); }
 
 // ---------- helpers ----------
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, string> = {}, ...kids: (string | Node)[]) {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(props)) node.setAttribute(k, v);
-  node.append(...kids);
-  return node;
-}
 function showBanner(msg: string | Node | null, warn = false) {
   el.banner.hidden = !msg;
   el.banner.className = warn ? 'warn' : '';
@@ -313,7 +316,7 @@ function openWorkflow(workflowId: string, runId: string, source?: HistoryApi, op
   closeReplay();
   if (!source) { replay?.stop(); replay = null; }
   current = { workflowId, runId, sample: source !== undefined };
-  if (!opts.resumeFrom) { graph = null; selectedId = null; changes = []; }
+  if (!opts.resumeFrom) { graph = null; runGraph = null; selectedId = null; changes = []; groupOpen.clear(); traceOpen.clear(); }
   if (!source) location.hash = `${encodeURIComponent(workflowId)}/${encodeURIComponent(runId)}`;
   const f = new WorkflowFeed(source ?? api, workflowId, runId);
   feed = f;
@@ -329,7 +332,7 @@ function onFeed(e: FeedEvent, resumeFrom: VGraph | null) {
       showBanner(current?.sample ? 'Replaying built-in sample data as a live run. It is not read from your Temporal server.' : null, true);
       el.empty.hidden = true;
       const prev = resumeFrom ?? null;
-      graph = e.graph;
+      graph = e.graph; runGraph = e.graph;
       renderHeader(e.graph);
       if (prev) view.update(e.graph, diffGraphs(prev, e.graph));
       else view.reset(e.graph, { fit: true });
@@ -338,7 +341,7 @@ function onFeed(e: FeedEvent, resumeFrom: VGraph | null) {
       break;
     }
     case 'update': {
-      graph = e.graph;
+      graph = e.graph; runGraph = e.graph;
       renderHeader(e.graph);
       view.update(e.graph, e.diff);
       for (const text of e.messages) changes.unshift({ id: ++changeSeq, time: clock(), text });
@@ -348,20 +351,33 @@ function onFeed(e: FeedEvent, resumeFrom: VGraph | null) {
         if (newest) view.revealIfOffscreen(newest.id);
       }
       const selectedChanged = selectedId && (e.diff.changedNodes.some((c) => c.next.id === selectedId));
-      if (!selectedId || selectedChanged) renderDetail();
+      if (!selectedId || selectedChanged || tab === 'failures') renderDetail(); else syncTabs();
       break;
     }
     case 'mode': setLive(e.mode); break;
-    case 'closed': setLive('closed'); renderHeader(e.graph); offerReplay(feed!.history, e.graph); break;
+    case 'closed': runGraph = e.graph; setLive('closed'); renderHeader(e.graph); offerReplay(feed!.history, e.graph); break;
     case 'error': setLive('error'); showBanner(explain(e.error)); break;
   }
 }
 
 function renderHeader(g: VGraph) {
-  el.title.textContent = `${g.workflowType || 'Workflow'}  ${current?.workflowId ?? ''}`.trim();
+  el.title.textContent = g.workflowType || 'Workflow';     // the IDs are in the chips below
   el.status.hidden = false;
   el.status.textContent = statusText(g.status);
   el.status.style.background = STATUS_COLOR[g.status] ?? '#6F7F90';
+  const wid = current?.workflowId ?? '', rid = current?.runId ?? '';
+  const chip = (key: string, what: string, value: string) => { const b = copyButton(what, () => value, value, 'id-chip'); b.dataset.key = key; return b; };
+  el.ids.replaceChildren(chip('workflow', 'workflow ID', wid), chip('run', 'run ID', rid));
+  el.openUi.hidden = !!current?.sample || !wid;
+  if (!el.openUi.hidden) { el.openUi.href = uiUrl(wid, rid); el.openUi.replaceChildren(iconOpen(), 'Open in Temporal UI'); }
+}
+
+/** Page of a run in the Temporal Web UI. */
+const uiUrl = (wid: string, rid: string) =>
+  `${__TEMPORAL_UI_URL__}/namespaces/${encodeURIComponent(api.namespace)}/workflows/${encodeURIComponent(wid)}/${encodeURIComponent(rid)}/history`;
+function openLink(href: string, label: string) {
+  const a = h('a', { class: 'btn', href, target: '_blank', rel: 'noopener noreferrer' }, label);
+  a.prepend(iconOpen()); return a;
 }
 
 function openSample() {
@@ -375,6 +391,8 @@ function openSample() {
 
 // ---------- details ----------
 function renderDetail() {
+  syncTabs();
+  if (tab === 'failures') return renderFailures();
   if (!graph) { el.detail.replaceChildren(h('p', { class: 'sub' }, 'Select a step to see its timing, input, result and events.')); return; }
   const v = graph.nodes.find((n) => n.id === selectedId);
   if (!v) return renderSummary(graph);
@@ -389,9 +407,14 @@ function renderDetail() {
   ];
   const parts: Node[] = [
     h('h3', {}, v.label), h('div', { class: 'sub' }, v.kind === 'localActivity' ? 'Local activity' : v.kind),
-    h('dl', {}, ...rows.flatMap(([k, val]) => [h('dt', {}, k), h('dd', {}, val)])),
+    h('dl', {}, ...rows.flatMap(([k, val]) => [h('dt', {}, k), h('dd', {}, val, ...(/\bID$/i.test(k) && val ? [copyButton(k, () => val)] : []))])),
   ];
-  if (v.failure) parts.push(h('h4', {}, 'Failure'), h('pre', { class: 'err' }, v.failure));
+  if (v.kind === 'child' && v.detail['Workflow ID'] && v.detail['Run ID'] && !current?.sample) {
+    parts.push(h('div', { class: 'actions' }, openLink(uiUrl(v.detail['Workflow ID'], v.detail['Run ID']), 'Open child in Temporal UI')));
+  }
+  const mine = (graph.failures ?? []).filter((f) => f.nodeId === v.id);
+  if (mine.length) mine.forEach((f) => parts.push(h('h4', {}, mine.length > 1 ? 'Failure' : 'Failure'), failureBlock(f)));
+  else if (v.failure) parts.push(h('h4', {}, 'Failure'), h('pre', { class: 'err' }, v.failure));
   if (v.input) parts.push(h('h4', {}, 'Input'), h('pre', {}, v.input));
   if (v.result) parts.push(h('h4', {}, 'Result'), h('pre', {}, v.result));
   parts.push(h('h4', {}, 'History events'), h('ul', { class: 'events' }, ...v.events.map((e) =>
@@ -405,19 +428,136 @@ function renderSummary(g: VGraph) {
   if (g.warnings.length) parts.push(h('div', { class: 'warnings' }, ...g.warnings.map((w) => h('p', {}, w))));
   parts.push(h('dl', {},
     h('dt', {}, 'Status'), h('dd', {}, statusText(g.status)),
-    h('dt', {}, 'Workflow ID'), h('dd', {}, current?.workflowId ?? ''),
-    h('dt', {}, 'Run ID'), h('dd', {}, current?.runId ?? ''),
+    h('dt', {}, 'Workflow ID'), h('dd', {}, current?.workflowId ?? '', copyButton('workflow ID', () => current?.workflowId ?? '')),
+    h('dt', {}, 'Run ID'), h('dd', {}, current?.runId ?? '', copyButton('run ID', () => current?.runId ?? '')),
     h('dt', {}, 'Steps'), h('dd', {}, String(g.nodes.filter((n) => n.kind !== 'start' && n.kind !== 'end').length)),
     ...(end?.durationMs != null ? [h('dt', {}, 'Total time'), h('dd', {}, formatDuration(end.durationMs))] : []),
     ...(start?.detail['Task queue'] ? [h('dt', {}, 'Task queue'), h('dd', {}, start.detail['Task queue'])] : []),
   ));
-  if (end?.failure) parts.push(h('h4', {}, 'Workflow failure'), h('pre', { class: 'err' }, end.failure));
+  const nFail = (runGraph?.failures ?? []).filter((f) => !f.duplicateOf).length;
+  if (nFail) {
+    const groups = groupFailures(runGraph!.failures, groupBy).length;
+    const b = h('button', { type: 'button', class: 'review-btn' }, `Review ${nFail} failure${nFail === 1 ? '' : 's'} in ${groups} group${groups === 1 ? '' : 's'}`);
+    b.addEventListener('click', () => setTab('failures'));
+    parts.push(b);
+  } else if (end?.failure) parts.push(h('h4', {}, 'Workflow failure'), h('pre', { class: 'err' }, end.failure));
   if (scrubber.visible) {
     parts.push(h('h4', {}, 'Timeline'), timelineList());
   } else if (changes.length) {
     parts.push(h('h4', {}, 'Recent changes'), h('ul', { class: 'changes' }, ...changes.slice(0, 15).map((c, i) =>
       h('li', i === 0 ? { class: 'fresh' } : {}, h('span', { class: 'tm' }, c.time), h('span', {}, c.text)))));
   }
+  el.detail.replaceChildren(...parts);
+}
+
+// ---------- failure triage ----------
+function setTab(t: 'details' | 'failures') { tab = t; renderDetail(); }
+function syncTabs() {
+  const n = (runGraph?.failures ?? []).filter((f) => !f.duplicateOf).length;
+  el.failCount.textContent = String(n); el.failCount.dataset.n = String(n);
+  el.tabDetails.setAttribute('aria-selected', String(tab === 'details'));
+  el.tabFailures.setAttribute('aria-selected', String(tab === 'failures'));
+}
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const firstLine = (s: string, max = 130) => { const l = s.split('\n')[0].trim(); return l.length > max ? l.slice(0, max - 1) + '…' : l; };
+
+function stackBlock(stack: string, open: boolean): HTMLElement {
+  const lines = stack.split('\n');
+  const fw = lines.filter((l) => classifyFrame(l) === 'framework').length;
+  const pre = h('pre', { class: 'stack', tabindex: '0' });
+  lines.forEach((l, i) => pre.append(h('span', { class: `fr fr-${classifyFrame(l)}` }, l + (i < lines.length - 1 ? '\n' : ''))));
+  const det = h('details', { class: 'f-stack' });
+  det.open = open;
+  const tools = h('div', { class: 'stack-tools' }, copyButton('stack trace', () => stack, 'Copy'));
+  if (fw) {
+    const t = h('button', { type: 'button', class: 'copy-btn', 'aria-pressed': 'false' }, 'Hide framework frames');
+    t.addEventListener('click', () => { const hide = pre.classList.toggle('hide-fw'); t.setAttribute('aria-pressed', String(hide)); t.textContent = hide ? 'Show framework frames' : 'Hide framework frames'; });
+    tools.append(t);
+  }
+  det.append(h('summary', {}, `Stack trace (${lines.length} lines${fw ? `, ${fw} from the JDK or SDK` : ''})`), tools, pre);
+  return det;
+}
+function linkBlock(l: FailureItem['detail']['chain'][number], root: boolean): HTMLElement {
+  const box = h('div', { class: root ? 'f-link root' : 'f-link' });
+  box.append(h('div', { class: 'f-type' }, l.type ?? l.kind, ...(l.nonRetryable ? [h('span', { class: 'f-tag' }, 'non-retryable')] : [])));
+  if (l.message) box.append(h('div', { class: 'f-msg' }, l.message));
+  if (l.info) box.append(h('div', { class: 'f-info' }, l.info));
+  if (l.stack) box.append(stackBlock(l.stack, root));
+  return box;
+}
+/** One failure in full: the root cause with its stack trace first, the wrapping failures folded below. */
+function failureBlock(it: FailureItem): HTMLElement {
+  const start = runGraph?.nodes.find((n) => n.kind === 'start')?.startedAt;
+  const ms = it.time && start ? Date.parse(it.time) - Date.parse(start) : NaN;
+  const chain = it.detail.chain;
+  const box = h('div', { class: 'failure', 'data-outcome': it.outcome },
+    h('div', { class: 'f-head' },
+      h('span', { class: 'f-outcome' }, capital(outcomeWords(it.outcome))),
+      h('span', { class: 'f-when' }, `${Number.isFinite(ms) ? fmtOffset(ms) + ' · ' : ''}event #${it.eventId}`),
+      copyButton('failure details', () => failureText(it), 'Copy failure')),
+    linkBlock(chain[chain.length - 1], true));
+  if (chain.length > 1) {
+    const det = h('details', { class: 'f-wrap' }, h('summary', {}, `Wrapped by ${chain.length - 1} failure${chain.length > 2 ? 's' : ''}`));
+    [...chain.slice(0, -1)].reverse().forEach((l) => det.append(linkBlock(l, false)));
+    box.append(det);
+  }
+  return box;
+}
+
+/** Selects the failing step, centres it and shows its stack trace. If the replay is earlier than the failure, it moves forward. */
+function jumpToFailure(it: FailureItem) {
+  if (scrubber.visible) scrubber.ensureAt(it.eventId);
+  if (!it.nodeId) { traceOpen.has(it.id) ? traceOpen.delete(it.id) : traceOpen.add(it.id); renderDetail(); return; }
+  tab = 'details';
+  if (!view.focusNode(it.nodeId)) renderDetail();
+}
+
+function renderFailures() {
+  if (!runGraph) { el.detail.replaceChildren(h('p', { class: 'sub' }, 'Open a workflow to see its failures.')); return; }
+  const real = runGraph.failures.filter((f) => !f.duplicateOf);
+  const groups = groupFailures(runGraph.failures, groupBy);
+  const parts: Node[] = [h('h3', {}, 'Failures'),
+    h('div', { class: 'sub' }, real.length ? `${real.length} failure${real.length === 1 ? '' : 's'} in ${groups.length} group${groups.length === 1 ? '' : 's'}` : 'Nothing has failed in this run.')];
+  if (!real.length) { el.detail.replaceChildren(...parts); return; }
+
+  const seg = (label: string, v: 'type' | 'message') => {
+    const b = h('button', { type: 'button', 'aria-pressed': String(groupBy === v) }, label);
+    b.addEventListener('click', () => { groupBy = v; groupOpen.clear(); renderDetail(); });
+    return b;
+  };
+  parts.push(h('div', { class: 'f-controls' },
+    h('div', { class: 'seg', role: 'group', 'aria-label': 'Group failures by' }, seg('By type', 'type'), seg('By message', 'message')),
+    copyButton('failure summary', () => groupsText(groups, `${runGraph!.workflowType || 'Workflow'} ${current?.workflowId ?? ''}`.trim()), 'Copy as text')));
+
+  const start = runGraph.nodes.find((n) => n.kind === 'start')?.startedAt;
+  const nowEvent = scrubber.visible ? scrubber.steps[scrubber.p - 1]?.eventId ?? Infinity : Infinity;
+  groups.forEach((g, gi) => {
+    const open = groupOpen.get(g.key) ?? gi < 2;
+    const head = h('button', { type: 'button', class: 'g-head', 'aria-expanded': String(open), title: g.items[0].detail.type ?? '' },
+      h('span', { class: 'caret', 'aria-hidden': 'true' }), h('span', { class: 'g-title' }, g.title), h('span', { class: 'g-count' }, String(g.items.length)));
+    head.addEventListener('click', () => { groupOpen.set(g.key, !open); renderDetail(); });
+    const sec = h('section', { class: 'group' }, head);
+    if (g.subtitle) sec.append(h('div', { class: 'g-sub' }, g.subtitle));
+    if (open) {
+      const ul = h('ul', { class: 'occs' });
+      g.items.forEach((it) => {
+        const ms = it.time && start ? Date.parse(it.time) - Date.parse(start) : NaN;
+        const expanded = traceOpen.has(it.id);
+        const main = h('button', { type: 'button', class: 'occ-main', title: it.nodeId ? 'Jump to this step' : 'Not tied to a step: show details' },
+          h('span', { class: 'occ-top' }, h('span', { class: 'occ-label' }, it.label), h('span', { class: 'occ-outcome', 'data-outcome': it.outcome }, outcomeWords(it.outcome)),
+            ...(Number.isFinite(ms) ? [h('span', { class: 'tm' }, fmtOffset(ms))] : [])),
+          h('span', { class: 'occ-msg' }, groupBy === 'type' ? firstLine(it.detail.message) : shortType(it.detail.type) || it.kind));
+        main.addEventListener('click', () => jumpToFailure(it));
+        const more = h('button', { type: 'button', class: 'occ-more', 'aria-expanded': String(expanded), 'aria-label': `${expanded ? 'Hide' : 'Show'} details of ${it.label} failure` }, h('span', { class: 'caret', 'aria-hidden': 'true' }));
+        more.addEventListener('click', () => { expanded ? traceOpen.delete(it.id) : traceOpen.add(it.id); renderDetail(); });
+        const li = h('li', { class: it.eventId > nowEvent ? 'occ future' : 'occ' }, h('div', { class: 'occ-row' }, main, more));
+        if (expanded) li.append(failureBlock(it));
+        ul.append(li);
+      });
+      sec.append(ul);
+    }
+    parts.push(sec);
+  });
   el.detail.replaceChildren(...parts);
 }
 
@@ -438,6 +578,13 @@ function timelineList(): HTMLElement {
 }
 
 // ---------- wiring ----------
+el.tabDetails.addEventListener('click', () => setTab('details'));
+el.tabFailures.addEventListener('click', () => setTab('failures'));
+for (const t of [el.tabDetails, el.tabFailures]) t.addEventListener('keydown', (e) => {
+  const k = (e as KeyboardEvent).key;
+  if (k !== 'ArrowLeft' && k !== 'ArrowRight') return;
+  e.preventDefault(); const next = tab === 'details' ? 'failures' : 'details'; setTab(next); (next === 'details' ? el.tabDetails : el.tabFailures).focus();
+});
 el.reload.addEventListener('click', () => loadList());
 el.query.addEventListener('keydown', (e) => { if (e.key === 'Enter') void loadList(); });
 el.ns.addEventListener('change', () => loadList());

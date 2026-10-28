@@ -119,6 +119,15 @@ export class Scrubber {
     if (!this.raf) this.raf = window.requestAnimationFrame(() => { this.raf = 0; this.apply(this.target); });
   }
 
+  /** Moves forward, if needed, so that history event `eventId` has happened; never moves back. */
+  ensureAt(eventId: number) {
+    if (!this.steps.length) return;
+    this.pause();
+    const i = this.steps.findIndex((s) => s.eventId >= eventId);
+    const want = i < 0 ? this.steps.length : i + 1;
+    if (want > this.p) this.goto(want, true);
+  }
+
   play() {
     if (this.steps.length < 2) return;
     if (this.p >= this.steps.length) this.apply(1);

@@ -6,6 +6,9 @@
 // a parent of the commands the next workflow task issued.  This is exact for
 // sequential flows and for fork/join patterns (Async.function + Promise.get).
 
+import { parseFailure, sameCause, synthFailure, type FailureItem, type FailureKind, type FailureOutcome } from './failure';
+export type { FailureItem } from './failure';
+
 export type NodeKind =
   | 'start' | 'activity' | 'localActivity' | 'timer' | 'child' | 'signal' | 'update' | 'end';
 
@@ -56,6 +59,8 @@ export interface VGraph {
   workflowType: string;
   status: string;
   warnings: string[];
+  /** Every failure in the run: failed and timed-out steps, steps that are retrying, workflow-task failures. */
+  failures: FailureItem[];
 }
 
 /** "EVENT_TYPE_TIMER_FIRED", "TimerFired" and "TIMER_FIRED" all become "TIMER_FIRED". */
@@ -119,7 +124,7 @@ function ms(a?: string, b?: string): number | undefined {
   return Number.isFinite(d) ? d : undefined;
 }
 
-function markerLabel(a: Attrs): { kind: 'local' | 'other'; name: string; failed?: string } {
+function markerLabel(a: Attrs): { kind: 'local' | 'other'; name: string; failed?: string; raw?: unknown } {
   const name = String(a.markerName ?? '');
   if (name !== 'LocalActivity') return { kind: 'other', name };
   let label = 'Local activity';
@@ -132,7 +137,7 @@ function markerLabel(a: Attrs): { kind: 'local' | 'other'; name: string; failed?
     }
     if (a.failure) failed = describeFailure(a.failure);
   } catch { /* marker payload formats differ between SDK versions */ }
-  return { kind: 'local', name: label, failed };
+  return { kind: 'local', name: label, failed, raw: a.failure };
 }
 
 export function buildGraph(
@@ -147,6 +152,15 @@ export function buildGraph(
   const byTimer = new Map<string, VNode>();
   const byInit = new Map<number, VNode>();
   const updateAccepted = new Map<number, VNode>();
+  const failures: FailureItem[] = [];
+  const retryCandidate = new Map<string, { failure: unknown; eventId: number; time?: string }>();
+  const addFailure = (n: VNode | undefined, kind: FailureKind, eventId: number, time: string | undefined, raw: unknown,
+    outcome: FailureOutcome, o: { label?: string; fallback?: string; fallbackType?: string; info?: string; idSuffix?: string } = {}) => {
+    const detail = parseFailure(raw) ?? (o.fallback ? synthFailure(o.fallback, o.fallbackType) : undefined);
+    if (!detail) return;
+    if (o.info) detail.chain[0].info = [detail.chain[0].info, o.info].filter(Boolean).join(' · ');
+    failures.push({ id: `${n?.id ?? 'wf'}:${eventId}${o.idSuffix ?? ''}`, nodeId: n?.id, label: o.label ?? n?.label ?? 'Workflow task', kind, outcome, eventId, time, detail });
+  };
 
   let workflowType = '';
   let startNode: VNode | undefined;
@@ -209,6 +223,12 @@ export function buildGraph(
       case 'WORKFLOW_TASK_TIMED_OUT': {
         const why = describeFailure(a.failure) ?? (a.timeoutType ? `timeout (${canon(a.timeoutType)})` : '');
         warnings.push(`Workflow task ${type === 'WORKFLOW_TASK_FAILED' ? 'failed' : 'timed out'} at event ${id}${why ? `: ${why}` : ''}`);
+        if (type === 'WORKFLOW_TASK_FAILED') {
+          const cause = a.cause ? String(canon(a.cause)).replace(/^WORKFLOW_TASK_FAILED_CAUSE_/, '').toLowerCase().replaceAll('_', ' ') : '';
+          addFailure(undefined, 'workflowTask', id, t, a.failure, 'failed', { label: 'Workflow task', fallback: cause ? `Workflow task failed: ${cause}` : 'Workflow task failed', info: cause ? `cause: ${cause}` : undefined });
+        } else {
+          addFailure(undefined, 'workflowTask', id, t, undefined, 'timedOut', { label: 'Workflow task', fallback: 'Workflow task timed out', fallbackType: `Timeout (${String(canon(a.timeoutType ?? '')).replace(/^TIMEOUT_TYPE_/, '').toLowerCase().replaceAll('_', ' ') || 'unknown'})` });
+        }
         break;
       }
 
@@ -239,7 +259,7 @@ export function buildGraph(
         n.startedAt = t;
         n.attempt = num(a.attempt) ?? 1;
         const lf = describeFailure(a.lastFailure);
-        if (lf) n.failure = `Previous attempt: ${lf}`;
+        if (lf) { n.failure = `Previous attempt: ${lf}`; retryCandidate.set(n.id, { failure: a.lastFailure, eventId: id, time: t }); }
         ref(n, e, id);
         break;
       }
@@ -254,7 +274,10 @@ export function buildGraph(
         n.closedAt = t;
         n.durationMs = ms(n.scheduledAt, t);
         if (type.endsWith('COMPLETED')) { n.result = decodePayloads(a.result); n.failure = undefined; }
-        else n.failure = describeFailure(a.failure) ?? n.failure;
+        else {
+          n.failure = describeFailure(a.failure) ?? n.failure;
+          addFailure(n, 'activity', id, t, a.failure, type.endsWith('TIMED_OUT') ? 'timedOut' : 'failed', { fallback: type.endsWith('TIMED_OUT') ? 'Activity timed out' : undefined });
+        }
         ref(n, e, id);
         resolve(n);
         break;
@@ -320,6 +343,7 @@ export function buildGraph(
         const n = byInit.get(Number(a.initiatedEventId));
         if (!n) break;
         n.state = 'failed'; n.closedAt = t; n.failure = `Could not start: ${canon(a.cause)}`;
+        addFailure(n, 'child', id, t, undefined, 'failed', { fallback: `Could not start child workflow: ${String(canon(a.cause)).replace(/^START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_/, '').toLowerCase().replaceAll('_', ' ')}` });
         ref(n, e, id);
         resolve(n);
         break;
@@ -335,7 +359,10 @@ export function buildGraph(
           : type.endsWith('TIMED_OUT') ? 'timedOut' : 'canceled';
         n.closedAt = t; n.durationMs = ms(n.scheduledAt, t);
         if (type.endsWith('COMPLETED')) n.result = decodePayloads(a.result);
-        else n.failure = describeFailure(a.failure);
+        else {
+          n.failure = describeFailure(a.failure);
+          if (type.endsWith('FAILED') || type.endsWith('TIMED_OUT')) addFailure(n, 'child', id, t, a.failure, type.endsWith('TIMED_OUT') ? 'timedOut' : 'failed', { fallback: type.endsWith('TIMED_OUT') ? 'Child workflow timed out' : undefined });
+        }
         ref(n, e, id);
         resolve(n);
         break;
@@ -371,7 +398,7 @@ export function buildGraph(
         const failed = a.outcome?.failure;
         n.state = failed ? 'failed' : 'completed'; n.closedAt = t;
         n.durationMs = ms(n.scheduledAt, t);
-        if (failed) n.failure = describeFailure(failed); else n.result = decodePayloads(a.outcome?.success);
+        if (failed) { n.failure = describeFailure(failed); addFailure(n, 'update', id, t, failed, 'failed'); } else n.result = decodePayloads(a.outcome?.success);
         ref(n, e, id);
         break;
       }
@@ -387,6 +414,7 @@ export function buildGraph(
           detail: {}, failure: m.failed,
         });
         ref(n, e, id);
+        if (m.failed) addFailure(n, 'localActivity', id, t, m.raw, 'failed', { fallback: m.failed });
         attach(n);
         // Local activities run inside the workflow task, so whatever the same
         // task schedules next can use their result.
@@ -419,6 +447,13 @@ export function buildGraph(
         });
         n.durationMs = ms(startNode?.startedAt, t);
         ref(n, e, id);
+        if (type === 'WORKFLOW_EXECUTION_FAILED' || type === 'WORKFLOW_EXECUTION_TIMED_OUT') {
+          const own = parseFailure(a.failure) ?? synthFailure(type === 'WORKFLOW_EXECUTION_TIMED_OUT' ? 'Workflow execution timed out' : 'Workflow failed', type === 'WORKFLOW_EXECUTION_TIMED_OUT' ? 'Timeout (workflow)' : undefined);
+          // A workflow failure that just wraps an activity or child failure is the same problem: it is kept for the end node
+          // but flagged so counts and groups list the problem once.
+          const same = failures.find((f) => sameCause(f.detail, own));
+          failures.push({ id: `wf:${id}`, nodeId: 'end', label: workflowType || 'Workflow', kind: 'workflow', outcome: type === 'WORKFLOW_EXECUTION_TIMED_OUT' ? 'timedOut' : 'failed', eventId: id, time: t, detail: own, ...(same ? { duplicateOf: same.id } : {}) });
+        }
         for (const p of parents) edges.push({ from: p, to: n.id });
         break;
       }
@@ -436,11 +471,18 @@ export function buildGraph(
     const lf = describeFailure(pa.lastFailure);
     if (lf) n.failure = `Last attempt: ${lf}`;
     if (canon(pa.state) === 'SCHEDULED' && (pa.attempt ?? 1) > 1) n.state = 'retrying';
+    if (pa.lastFailure) retryCandidate.set(n.id, { failure: pa.lastFailure, eventId: n.events[n.events.length - 1]?.id ?? 0, time: n.events[n.events.length - 1]?.time });
   }
+  // An activity that is still open after a failed attempt is "retrying"; one that later completed is not a failure.
+  for (const [nodeId, c] of retryCandidate) {
+    const n = byId.get(nodeId);
+    if (n && !n.closedAt) addFailure(n, 'activity', c.eventId, c.time, c.failure, 'retrying', { idSuffix: ':retry' });
+  }
+  failures.sort((x, y) => x.eventId - y.eventId);
 
   // The closing event is authoritative; describe() may be a poll behind.
   if (opts.workflowStatus && status === 'RUNNING') status = canon(opts.workflowStatus);
-  return { nodes, edges: reduceEdges(edges), workflowType, status, warnings };
+  return { nodes, edges: reduceEdges(edges), workflowType, status, warnings, failures };
 }
 
 /** Drops duplicate edges and edges already implied by a longer path. */

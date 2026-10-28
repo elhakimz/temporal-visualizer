@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { buildGraph, canon, decodePayloads } from '../src/core/history';
 import { layoutGraph } from '../src/core/layout';
+import { classifyFrame, failureText, groupFailures, groupsText, normalizeMessage, parseFailure, shortType } from '../src/core/failure';
 import { buildSteps, eventWords, fmtOffset, graphAtStep, nearestStep, playDelay, stepPositions } from '../src/core/timeline';
 import { DEFAULT_WIDTH, MIN_WIDTH, clampWidth, maxWidth } from '../src/core/sidebar-size';
 import { NO_FILTER, applyFilter, failureCount, isUnfiltered } from '../src/core/filter';
@@ -127,6 +128,55 @@ assert.equal(fmtOffset(420), '+420 ms'); assert.equal(fmtOffset(3410), '+3.41 s'
 assert.equal(playDelay(steps, 1, 'steps', 2), 325);
 assert.ok(playDelay(steps, steps.findIndex((st) => st.label === 'Sleep 5s' && st.type === 'TIMER_FIRED'), 'time', 1) > 1000, 'a 5 s sleep takes visibly longer in time mode');
 console.log('timeline ok:', steps.length, 'steps from', evs.length, 'events');
+
+// ---- failure triage ----
+const fx = JSON.parse(readFileSync(new URL('./fixtures/failing-history.json', import.meta.url), 'utf8')).history.events;
+const fg = buildGraph(fx);
+const f = fg.failures.filter((x) => !x.duplicateOf);
+const dup = fg.failures.filter((x) => x.duplicateOf);
+assert.equal(dup.length, 1); assert.equal(dup[0].nodeId, 'end'); assert.equal(dup[0].kind, 'workflow');
+assert.equal(f.find((x) => x.eventId === 21)!.id, dup[0].duplicateOf);
+const lab = (i: number) => `${f[i].label}/${f[i].kind}/${f[i].outcome}`;
+console.log(f.map((x, i) => `  ${i}: ${lab(i)} #${x.eventId} ${x.detail.summary.slice(0, 70)}`).join('\n'));
+assert.equal(f.length, 6, 'reserve, charge, email timeout, charge again, child, workflow task (the workflow failure is deduped)');
+assert.deepEqual(f.map((x) => x.kind).sort(), ['activity', 'activity', 'activity', 'activity', 'child', 'workflowTask']);
+assert.equal(groupFailures(fg.failures, 'type').reduce((n, g) => n + g.items.length, 0), 6, 'the wrapping workflow failure is not counted twice');
+assert.equal(f.filter((x) => x.kind === 'activity' && x.outcome === 'failed').length, 3);
+assert.equal(f.find((x) => x.label === 'SendConfirmationEmail')!.outcome, 'timedOut');
+assert.equal(f.find((x) => x.label === 'SendConfirmationEmail')!.detail.type, 'Timeout (start to close)');
+const wt = f.find((x) => x.kind === 'workflowTask')!;
+assert.match(wt.detail.chain[0].info!, /non deterministic error/); assert.match(wt.detail.chain[0].stack!, /OrderWorkflowImpl/);
+const funds = f.find((x) => x.label === 'ChargePayment')!;
+assert.equal(funds.detail.type, 'com.acme.payments.InsufficientFundsException');
+assert.deepEqual(funds.detail.chain.map((l) => l.kind), ['activity', 'application'], 'wrapper first, root cause last');
+assert.match(funds.detail.chain[1].stack!, /LedgerClient\.debit/);
+assert.match(funds.detail.chain[0].info!, /ChargePayment · id 1 · maximum attempts reached/);
+const childF = f.find((x) => x.kind === 'child')!;
+assert.equal(shortType(childF.detail.type), 'RefundRejectedException'); assert.equal(childF.detail.chain.length, 3);
+const byType = groupFailures(f, 'type');
+assert.equal(byType[0].title, 'InsufficientFundsException'); assert.equal(byType[0].items.length, 2);
+assert.equal(byType.length, 5, 'funds, stock, timeout, refund rejected, non-determinism');
+assert.equal(f.filter((x) => x.kind === 'activity' && x.outcome === 'failed').length + 1, 4);
+assert.equal(groupFailures(f, 'message')[0].items.length, 2, 'messages that differ only in numbers group together');
+assert.equal(normalizeMessage('Insufficient funds: balance 12.50 is below 129.90'), normalizeMessage('Insufficient funds: balance 3.20 is below 55.00'));
+assert.equal(normalizeMessage('order 3f2b1c4e-1111-4222-8333-444455556666 failed'), 'order <id> failed');
+assert.equal(classifyFrame('\tat java.base/jdk.internal.reflect.X.invoke(X.java:1)'), 'framework');
+assert.equal(classifyFrame('\tat io.temporal.internal.worker.A.b(A.java:2)'), 'framework');
+assert.equal(classifyFrame('\tat com.acme.payments.LedgerClient.debit(LedgerClient.java:112)'), 'app');
+assert.equal(classifyFrame('Caused by: x'), 'text');
+assert.equal(classifyFrame('    at Object.<anonymous> (/srv/app/node_modules/@temporalio/worker/lib/a.js:1:1)'), 'framework');
+assert.match(failureText(funds), /Caused by: com\.acme\.payments\.InsufficientFundsException: Insufficient funds/);
+assert.match(groupsText(byType, 'Failures'), /2 × InsufficientFundsException/);
+// encoded (encrypted) failures are decoded; unknown shapes do not throw
+const enc = Buffer.from(JSON.stringify({ message: 'secret', stack_trace: 'at x' })).toString('base64');
+assert.equal(parseFailure({ message: 'Encoded failure', encodedAttributes: { data: enc }, applicationFailureInfo: { type: 'T' } })!.message, 'secret');
+assert.equal(parseFailure(undefined), undefined); assert.equal(parseFailure({})!.summary, 'Failure');
+// live: a failed attempt that is still being retried shows up, and one that later completed does not
+const liveEvs = evs.slice(0, evs.findIndex((e: any) => e.eventType.endsWith('ACTIVITY_TASK_FAILED')) + 0);
+const retrying = buildGraph(liveEvs, { pendingActivities: [{ activityId: '4', state: 'PENDING_ACTIVITY_STATE_SCHEDULED', attempt: 2, maximumAttempts: 3, lastFailure: { message: 'boom', applicationFailureInfo: { type: 'IOException' } } }] });
+assert.equal(retrying.failures.length, 1); assert.equal(retrying.failures[0].outcome, 'retrying'); assert.equal(retrying.failures[0].detail.type, 'IOException');
+assert.equal(buildGraph(evs.slice(0, evs.length - 3)).failures.filter((x) => x.outcome === 'retrying').length, 0);
+console.log('failure triage ok');
 
 const pos = layoutGraph(g);
 assert.equal(pos.size, g.nodes.length);

@@ -45,13 +45,19 @@
     <main id="main">
       <div id="bar">
         <div class="titles">
-          <h2 id="wf-title">No workflow selected</h2>
-          <span id="wf-status" class="chip" hidden></span>
+          <div class="title-block">
+            <div class="title-row">
+              <h2 id="wf-title">No workflow selected</h2>
+              <span id="wf-status" class="chip" hidden></span>
+            </div>
+            <div id="wf-ids" class="id-row"></div>
+          </div>
         </div>
         <div class="row">
           <span id="live" class="live" data-mode="idle"><span class="live-dot"></span><span id="live-text">Not connected</span></span>
           <label class="check"><input id="auto" type="checkbox" checked /> Follow live updates</label>
           <button id="fit" type="button">Fit to view</button>
+          <a id="open-ui" class="btn" target="_blank" rel="noopener noreferrer" hidden>Open in Temporal UI</a>
         </div>
       </div>
       <div id="banner" role="alert" hidden></div>
@@ -83,7 +89,13 @@
       </div>
     </main>
 
-    <aside id="detail" aria-label="Details"></aside>
+    <aside id="detail" aria-label="Details">
+      <div id="detail-tabs" role="tablist" aria-label="Details panel">
+        <button id="tab-details" type="button" role="tab" aria-selected="true" aria-controls="detail-body">Details</button>
+        <button id="tab-failures" type="button" role="tab" aria-selected="false" aria-controls="detail-body">Failures <span id="fail-count" class="chip-badge" data-n="0">0</span></button>
+      </div>
+      <div id="detail-body" role="tabpanel"></div>
+    </aside>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>

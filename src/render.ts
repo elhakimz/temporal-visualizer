@@ -312,6 +312,21 @@ export class GraphView {
     this.canvas.setDirty(true, true);
   }
 
+  /** Selects a node, centres the view on it and outlines it; false if the node is not in the graph. */
+  focusNode(id: string): boolean {
+    const node = this.nodes.get(id);
+    if (!node) return false;
+    this.selectedId = id;
+    this.canvas.selectItems([node]);
+    this.paintLinks();
+    this.canvas.centerOnNode(node);
+    this.flash(node);
+    this.startLoop();
+    this.canvas.setDirty(true, true);
+    this.onSelect(node.v ?? null);
+    return true;
+  }
+
   /** Centres the view on the first step that is still in flight. */
   focusActive() {
     const active = [...this.nodes.values()].find((n) => n.v && ['running', 'retrying', 'scheduled'].includes(n.v.state));

@@ -53,6 +53,8 @@ if (process.env.SPAWN_MS) {
     setTimeout(() => { runs[id].status = n % 2 ? 'Completed' : 'Failed'; }, 5000);
   }, Number(process.env.SPAWN_MS));
 }
+const failing = JSON.parse(readFileSync(new URL('./fixtures/failing-history.json', import.meta.url), 'utf8')).history.events;
+runs['order-F-6001'] = { runId: 'run-f', status: 'Failed', events: failing, start: mins(15) };
 const PAGE = 20;
 const send = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
 const enc = (n) => Buffer.from(String(n)).toString('base64');

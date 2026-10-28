@@ -1,0 +1,468 @@
+{
+  "history": {
+    "events": [
+      {
+        "eventId": "1",
+        "eventTime": "2026-10-25T10:00:00.000Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+        "workflowExecutionStartedEventAttributes": {
+          "workflowType": {
+            "name": "OrderWorkflow"
+          },
+          "taskQueue": {
+            "name": "ORDERS"
+          },
+          "input": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJvcmRlcklkIjoiRi02MDAxIiwidG90YWwiOjEyOS45fQ=="
+              }
+            ]
+          },
+          "attempt": 1
+        }
+      },
+      {
+        "eventId": "2",
+        "eventTime": "2026-10-25T10:00:00.040Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+        "workflowTaskScheduledEventAttributes": {}
+      },
+      {
+        "eventId": "3",
+        "eventTime": "2026-10-25T10:00:00.045Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+        "workflowTaskStartedEventAttributes": {
+          "scheduledEventId": "2"
+        }
+      },
+      {
+        "eventId": "4",
+        "eventTime": "2026-10-25T10:00:00.053Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+        "workflowTaskCompletedEventAttributes": {
+          "scheduledEventId": "2",
+          "startedEventId": "3"
+        }
+      },
+      {
+        "eventId": "5",
+        "eventTime": "2026-10-25T10:00:00.056Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+        "activityTaskScheduledEventAttributes": {
+          "activityId": "1",
+          "activityType": {
+            "name": "ChargePayment"
+          },
+          "taskQueue": {
+            "name": "ORDERS"
+          },
+          "workflowTaskCompletedEventId": "4",
+          "startToCloseTimeout": "10s",
+          "retryPolicy": {
+            "maximumAttempts": 3
+          }
+        }
+      },
+      {
+        "eventId": "6",
+        "eventTime": "2026-10-25T10:00:00.059Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+        "activityTaskScheduledEventAttributes": {
+          "activityId": "2",
+          "activityType": {
+            "name": "ReserveInventory"
+          },
+          "taskQueue": {
+            "name": "ORDERS"
+          },
+          "workflowTaskCompletedEventId": "4",
+          "startToCloseTimeout": "10s",
+          "retryPolicy": {
+            "maximumAttempts": 3
+          }
+        }
+      },
+      {
+        "eventId": "7",
+        "eventTime": "2026-10-25T10:00:00.062Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+        "activityTaskScheduledEventAttributes": {
+          "activityId": "3",
+          "activityType": {
+            "name": "SendConfirmationEmail"
+          },
+          "taskQueue": {
+            "name": "ORDERS"
+          },
+          "workflowTaskCompletedEventId": "4",
+          "startToCloseTimeout": "10s",
+          "retryPolicy": {
+            "maximumAttempts": 3
+          }
+        }
+      },
+      {
+        "eventId": "8",
+        "eventTime": "2026-10-25T10:00:00.082Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+        "activityTaskStartedEventAttributes": {
+          "scheduledEventId": "5",
+          "attempt": 1
+        }
+      },
+      {
+        "eventId": "9",
+        "eventTime": "2026-10-25T10:00:00.102Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+        "activityTaskStartedEventAttributes": {
+          "scheduledEventId": "6",
+          "attempt": 1
+        }
+      },
+      {
+        "eventId": "10",
+        "eventTime": "2026-10-25T10:00:00.122Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+        "activityTaskStartedEventAttributes": {
+          "scheduledEventId": "7",
+          "attempt": 1
+        }
+      },
+      {
+        "eventId": "11",
+        "eventTime": "2026-10-25T10:00:00.302Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_FAILED",
+        "activityTaskFailedEventAttributes": {
+          "scheduledEventId": "6",
+          "startedEventId": "9",
+          "failure": {
+            "message": "Activity task failed",
+            "source": "JavaSDK",
+            "stackTrace": "",
+            "activityFailureInfo": {
+              "activityType": {
+                "name": "ReserveInventory"
+              },
+              "activityId": "2",
+              "scheduledEventId": "6",
+              "retryState": "RETRY_STATE_NON_RETRYABLE_FAILURE"
+            },
+            "cause": {
+              "message": "Out of stock: SKU-77 (requested 2, available 0)",
+              "source": "JavaSDK",
+              "stackTrace": "com.acme.inventory.OutOfStockException: Out of stock: SKU-77 (requested 2, available 0)\n\tat com.acme.inventory.StockRepository.reserve(StockRepository.java:88)\n\tat com.acme.inventory.ReserveActivityImpl.reserve(ReserveActivityImpl.java:34)\n\tat java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\n\tat java.base/java.lang.reflect.Method.invoke(Method.java:580)\n\tat io.temporal.internal.activity.RootActivityInboundCallsInterceptor.execute(RootActivityInboundCallsInterceptor.java:41)\n\tat io.temporal.internal.worker.ActivityTaskHandlerImpl$POJOActivityImplementation.execute(ActivityTaskHandlerImpl.java:272)\n\tat io.temporal.internal.worker.ActivityWorker$TaskHandlerImpl.handle(ActivityWorker.java:214)",
+              "applicationFailureInfo": {
+                "type": "com.acme.inventory.OutOfStockException",
+                "nonRetryable": false
+              }
+            }
+          },
+          "retryState": "RETRY_STATE_NON_RETRYABLE_FAILURE"
+        }
+      },
+      {
+        "eventId": "12",
+        "eventTime": "2026-10-25T10:00:00.522Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_FAILED",
+        "activityTaskFailedEventAttributes": {
+          "scheduledEventId": "5",
+          "startedEventId": "8",
+          "failure": {
+            "message": "Activity task failed",
+            "source": "JavaSDK",
+            "stackTrace": "",
+            "activityFailureInfo": {
+              "activityType": {
+                "name": "ChargePayment"
+              },
+              "activityId": "1",
+              "scheduledEventId": "5",
+              "retryState": "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+            },
+            "cause": {
+              "message": "Insufficient funds: balance 12.50 is below 129.90",
+              "source": "JavaSDK",
+              "stackTrace": "com.acme.payments.InsufficientFundsException: Insufficient funds: balance 12.50 is below 129.90\n\tat com.acme.payments.LedgerClient.debit(LedgerClient.java:112)\n\tat com.acme.payments.ChargeActivityImpl.charge(ChargeActivityImpl.java:57)\n\tat java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\n\tat java.base/java.lang.reflect.Method.invoke(Method.java:580)\n\tat io.temporal.internal.activity.RootActivityInboundCallsInterceptor.execute(RootActivityInboundCallsInterceptor.java:41)\n\tat io.temporal.internal.worker.ActivityTaskHandlerImpl$POJOActivityImplementation.execute(ActivityTaskHandlerImpl.java:272)\n\tat io.temporal.internal.worker.ActivityWorker$TaskHandlerImpl.handle(ActivityWorker.java:214)",
+              "applicationFailureInfo": {
+                "type": "com.acme.payments.InsufficientFundsException",
+                "nonRetryable": false
+              }
+            }
+          },
+          "retryState": "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+        }
+      },
+      {
+        "eventId": "13",
+        "eventTime": "2026-10-25T10:00:09.522Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT",
+        "activityTaskTimedOutEventAttributes": {
+          "scheduledEventId": "7",
+          "startedEventId": "10",
+          "failure": {
+            "message": "activity timeout",
+            "source": "Server",
+            "timeoutFailureInfo": {
+              "timeoutType": "TIMEOUT_TYPE_START_TO_CLOSE"
+            }
+          },
+          "retryState": "RETRY_STATE_TIMEOUT"
+        }
+      },
+      {
+        "eventId": "14",
+        "eventTime": "2026-10-25T10:00:09.562Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+        "workflowTaskScheduledEventAttributes": {}
+      },
+      {
+        "eventId": "15",
+        "eventTime": "2026-10-25T10:00:09.567Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+        "workflowTaskStartedEventAttributes": {
+          "scheduledEventId": "14"
+        }
+      },
+      {
+        "eventId": "16",
+        "eventTime": "2026-10-25T10:00:09.575Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+        "workflowTaskCompletedEventAttributes": {
+          "scheduledEventId": "14",
+          "startedEventId": "15"
+        }
+      },
+      {
+        "eventId": "17",
+        "eventTime": "2026-10-25T10:00:09.578Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+        "activityTaskScheduledEventAttributes": {
+          "activityId": "4",
+          "activityType": {
+            "name": "ChargePayment"
+          },
+          "taskQueue": {
+            "name": "ORDERS"
+          },
+          "workflowTaskCompletedEventId": "16",
+          "startToCloseTimeout": "10s",
+          "retryPolicy": {
+            "maximumAttempts": 3
+          }
+        }
+      },
+      {
+        "eventId": "18",
+        "eventTime": "2026-10-25T10:00:09.581Z",
+        "eventType": "EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED",
+        "startChildWorkflowExecutionInitiatedEventAttributes": {
+          "workflowId": "refund-F-6001",
+          "workflowType": {
+            "name": "RefundFlow"
+          },
+          "taskQueue": {
+            "name": "ORDERS"
+          },
+          "workflowTaskCompletedEventId": "16",
+          "input": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJvcmRlcklkIjoiRi02MDAxIn0="
+              }
+            ]
+          }
+        }
+      },
+      {
+        "eventId": "19",
+        "eventTime": "2026-10-25T10:00:09.591Z",
+        "eventType": "EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED",
+        "childWorkflowExecutionStartedEventAttributes": {
+          "initiatedEventId": "18",
+          "workflowExecution": {
+            "workflowId": "refund-F-6001",
+            "runId": "c0ffee00-1111-4222-8333-444455556666"
+          }
+        }
+      },
+      {
+        "eventId": "20",
+        "eventTime": "2026-10-25T10:00:09.611Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+        "activityTaskStartedEventAttributes": {
+          "scheduledEventId": "17",
+          "attempt": 1
+        }
+      },
+      {
+        "eventId": "21",
+        "eventTime": "2026-10-25T10:00:10.011Z",
+        "eventType": "EVENT_TYPE_ACTIVITY_TASK_FAILED",
+        "activityTaskFailedEventAttributes": {
+          "scheduledEventId": "17",
+          "startedEventId": "20",
+          "failure": {
+            "message": "Activity task failed",
+            "source": "JavaSDK",
+            "stackTrace": "",
+            "activityFailureInfo": {
+              "activityType": {
+                "name": "ChargePayment"
+              },
+              "activityId": "4",
+              "scheduledEventId": "17",
+              "retryState": "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+            },
+            "cause": {
+              "message": "Insufficient funds: balance 3.20 is below 55.00",
+              "source": "JavaSDK",
+              "stackTrace": "com.acme.payments.InsufficientFundsException: Insufficient funds: balance 3.20 is below 55.00\n\tat com.acme.payments.LedgerClient.debit(LedgerClient.java:112)\n\tat com.acme.payments.ChargeActivityImpl.charge(ChargeActivityImpl.java:57)\n\tat java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\n\tat java.base/java.lang.reflect.Method.invoke(Method.java:580)\n\tat io.temporal.internal.activity.RootActivityInboundCallsInterceptor.execute(RootActivityInboundCallsInterceptor.java:41)\n\tat io.temporal.internal.worker.ActivityTaskHandlerImpl$POJOActivityImplementation.execute(ActivityTaskHandlerImpl.java:272)\n\tat io.temporal.internal.worker.ActivityWorker$TaskHandlerImpl.handle(ActivityWorker.java:214)",
+              "applicationFailureInfo": {
+                "type": "com.acme.payments.InsufficientFundsException",
+                "nonRetryable": false
+              }
+            }
+          },
+          "retryState": "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+        }
+      },
+      {
+        "eventId": "22",
+        "eventTime": "2026-10-25T10:00:10.311Z",
+        "eventType": "EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_FAILED",
+        "childWorkflowExecutionFailedEventAttributes": {
+          "initiatedEventId": "18",
+          "failure": {
+            "message": "Child Workflow execution failed",
+            "source": "JavaSDK",
+            "stackTrace": "",
+            "childWorkflowExecutionFailureInfo": {
+              "workflowType": {
+                "name": "RefundFlow"
+              },
+              "workflowExecution": {
+                "workflowId": "refund-F-6001",
+                "runId": "c0ffee00-1111-4222-8333-444455556666"
+              },
+              "retryState": "RETRY_STATE_NON_RETRYABLE_FAILURE"
+            },
+            "cause": {
+              "message": "Activity task failed",
+              "source": "JavaSDK",
+              "stackTrace": "",
+              "activityFailureInfo": {
+                "activityType": {
+                  "name": "RefundActivity"
+                },
+                "activityId": "1",
+                "scheduledEventId": "7",
+                "retryState": "RETRY_STATE_NON_RETRYABLE_FAILURE"
+              },
+              "cause": {
+                "message": "Refund rejected: account closed",
+                "source": "JavaSDK",
+                "stackTrace": "com.acme.refunds.RefundRejectedException: Refund rejected: account closed\n\tat com.acme.refunds.RefundService.issue(RefundService.java:71)\n\tat com.acme.refunds.RefundActivityImpl.refund(RefundActivityImpl.java:29)\n\tat java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\n\tat java.base/java.lang.reflect.Method.invoke(Method.java:580)\n\tat io.temporal.internal.activity.RootActivityInboundCallsInterceptor.execute(RootActivityInboundCallsInterceptor.java:41)\n\tat io.temporal.internal.worker.ActivityTaskHandlerImpl$POJOActivityImplementation.execute(ActivityTaskHandlerImpl.java:272)\n\tat io.temporal.internal.worker.ActivityWorker$TaskHandlerImpl.handle(ActivityWorker.java:214)",
+                "applicationFailureInfo": {
+                  "type": "com.acme.refunds.RefundRejectedException",
+                  "nonRetryable": false
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "eventId": "23",
+        "eventTime": "2026-10-25T10:00:10.351Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+        "workflowTaskScheduledEventAttributes": {}
+      },
+      {
+        "eventId": "24",
+        "eventTime": "2026-10-25T10:00:10.356Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+        "workflowTaskStartedEventAttributes": {
+          "scheduledEventId": "23"
+        }
+      },
+      {
+        "eventId": "25",
+        "eventTime": "2026-10-25T10:00:10.362Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_FAILED",
+        "workflowTaskFailedEventAttributes": {
+          "scheduledEventId": "23",
+          "startedEventId": "24",
+          "cause": "WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR",
+          "failure": {
+            "message": "[TMPRL1100] Nondeterminism: event 14 is ActivityTaskScheduled, but workflow code issued a different command",
+            "source": "JavaSDK",
+            "stackTrace": "io.temporal.worker.NonDeterministicException: [TMPRL1100] Nondeterminism\n\tat io.temporal.internal.statemachines.WorkflowStateMachines.handleCommandEvent(WorkflowStateMachines.java:407)\n\tat com.acme.orders.OrderWorkflowImpl.run(OrderWorkflowImpl.java:63)\n\tat io.temporal.internal.sync.WorkflowThreadContext.run(WorkflowThreadContext.java:92)",
+            "applicationFailureInfo": {
+              "type": "io.temporal.worker.NonDeterministicException"
+            }
+          }
+        }
+      },
+      {
+        "eventId": "26",
+        "eventTime": "2026-10-25T10:00:10.402Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+        "workflowTaskScheduledEventAttributes": {}
+      },
+      {
+        "eventId": "27",
+        "eventTime": "2026-10-25T10:00:10.407Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+        "workflowTaskStartedEventAttributes": {
+          "scheduledEventId": "26"
+        }
+      },
+      {
+        "eventId": "28",
+        "eventTime": "2026-10-25T10:00:10.415Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+        "workflowTaskCompletedEventAttributes": {
+          "scheduledEventId": "26",
+          "startedEventId": "27"
+        }
+      },
+      {
+        "eventId": "29",
+        "eventTime": "2026-10-25T10:00:10.419Z",
+        "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_FAILED",
+        "workflowExecutionFailedEventAttributes": {
+          "workflowTaskCompletedEventId": "28",
+          "failure": {
+            "message": "Activity task failed",
+            "source": "JavaSDK",
+            "stackTrace": "",
+            "activityFailureInfo": {
+              "activityType": {
+                "name": "ChargePayment"
+              },
+              "activityId": "4",
+              "scheduledEventId": "17",
+              "retryState": "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+            },
+            "cause": {
+              "message": "Insufficient funds: balance 3.20 is below 55.00",
+              "source": "JavaSDK",
+              "stackTrace": "com.acme.payments.InsufficientFundsException: Insufficient funds: balance 3.20 is below 55.00\n\tat com.acme.payments.LedgerClient.debit(LedgerClient.java:112)\n\tat com.acme.payments.ChargeActivityImpl.charge(ChargeActivityImpl.java:57)\n\tat java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\n\tat java.base/java.lang.reflect.Method.invoke(Method.java:580)\n\tat io.temporal.internal.activity.RootActivityInboundCallsInterceptor.execute(RootActivityInboundCallsInterceptor.java:41)\n\tat io.temporal.internal.worker.ActivityTaskHandlerImpl$POJOActivityImplementation.execute(ActivityTaskHandlerImpl.java:272)\n\tat io.temporal.internal.worker.ActivityWorker$TaskHandlerImpl.handle(ActivityWorker.java:214)",
+              "applicationFailureInfo": {
+                "type": "com.acme.payments.InsufficientFundsException",
+                "nonRetryable": false
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}
