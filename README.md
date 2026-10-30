@@ -1,5 +1,7 @@
 # Temporal workflow visualizer
 
+![Temporal Visualizer](https://raw.githubusercontent.com/elhakimz/temporal-visualizer/refs/heads/main/screenshot.png)
+
 Shows a Temporal workflow execution as a node graph, drawn with the
 [`@comfyorg/litegraph`](https://github.com/Comfy-Org/litegraph.js) fork of LiteGraph.
 It reads the event history of any workflow, so it works with the Java SDK
