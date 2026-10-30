@@ -55,6 +55,10 @@ if (process.env.SPAWN_MS) {
 }
 const failing = JSON.parse(readFileSync(new URL('./fixtures/failing-history.json', import.meta.url), 'utf8')).history.events;
 runs['order-F-6001'] = { runId: 'run-f', status: 'Failed', events: failing, start: mins(15) };
+// Runs that point at each other (parent/child, continue-as-new): see scripts/make-family.ts
+const family = JSON.parse(readFileSync(new URL('./fixtures/family.json', import.meta.url), 'utf8'));
+const famRuns = new Map(family.runs.map((r) => [`${r.workflowId}/${r.runId}`, { ...r, start: mins(r.startMinsAgo) }]));
+const lookup = (wid, rid) => famRuns.get(`${wid}/${rid}`) ?? runs[wid];
 const PAGE = 20;
 const send = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
 const enc = (n) => Buffer.from(String(n)).toString('base64');
@@ -65,14 +69,15 @@ http.createServer(async (req, res) => {
   const p = url.pathname;
   let m;
   if (p === '/api/v1/namespaces/default/workflows') {
-    return send(res, 200, { executions: Object.entries(runs).sort((a, b) => Date.parse(b[1].start ?? all[0].eventTime) - Date.parse(a[1].start ?? all[0].eventTime)).map(([id, r]) => ({
-      execution: { workflowId: id, runId: r.runId }, type: { name: 'OrderWorkflow' }, status: r.status,
+    const rows = [...Object.entries(runs).map(([id, r]) => ({ id, r })), ...[...famRuns.values()].map((r) => ({ id: r.workflowId, r }))];
+    return send(res, 200, { executions: rows.sort((a, b) => Date.parse(b.r.start ?? all[0].eventTime) - Date.parse(a.r.start ?? all[0].eventTime)).map(({ id, r }) => ({
+      execution: { workflowId: id, runId: r.runId }, type: { name: r.type ?? 'OrderWorkflow' }, status: r.status,
       startTime: r.start ?? all[0].eventTime, taskQueue: 'ORDERS', historyLength: String(r.events.length),
-      ...(r.parent ? { parentExecution: { workflowId: r.parent, runId: 'x' } } : {}) })) });
+      ...(r.parent ? { parentExecution: typeof r.parent === 'string' ? { workflowId: r.parent, runId: 'x' } : r.parent } : {}) })) });
   }
   // The Temporal UI's own events route (the live workflow deliberately lacks it)
   if ((m = p.match(/^\/api\/v1\/namespaces\/default\/workflows\/([^/]+)\/runs\/([^/]+)\/events$/))) {
-    const r = runs[decodeURIComponent(m[1])];
+    const r = lookup(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
     if (!r || r.runId === 'run-live') return send(res, 404, { message: 'route not available' });
     const start = dec(url.searchParams.get('nextPageToken'));
     const slice = r.events.slice(start, start + PAGE);
@@ -81,8 +86,9 @@ http.createServer(async (req, res) => {
   // gRPC-gateway route with long polling
   if ((m = p.match(/^\/api\/v1\/namespaces\/default\/workflows\/([^/]+)\/history$/))) {
     const id = decodeURIComponent(m[1]);
-    const r = runs[id];
+    const r = lookup(id, url.searchParams.get('execution.runId') ?? '');
     if (!r) return send(res, 404, { message: 'not found' });
+    const size = Number(url.searchParams.get('maximumPageSize')) || 500;
     const from = dec(url.searchParams.get('nextPageToken'));
     if (url.searchParams.get('waitNewEvent') === 'true' && id === 'order-B-2210' && from >= r.events.length && r.status === 'Running') {
       let gone = false;
@@ -90,13 +96,21 @@ http.createServer(async (req, res) => {
       await new Promise((resolve) => { live.waiters.push(resolve); setTimeout(resolve, 20000); });
       if (gone) return;
     }
-    const events = r.events.slice(from, from + 500);
+    const events = r.events.slice(from, from + size);
     const next = from + events.length;
     const closed = r.status !== 'Running' && next >= r.events.length;
     return send(res, 200, { history: { events }, nextPageToken: closed ? '' : enc(next) });
   }
+  // describe without a run id answers for the latest run of that workflow id
+  if ((m = p.match(/^\/api\/v1\/namespaces\/default\/workflows\/([^/]+)$/))) {
+    const wid = decodeURIComponent(m[1]);
+    const rid = family.latest[wid] ?? runs[wid]?.runId;
+    const r = rid && lookup(wid, rid);
+    if (!r) return send(res, 404, { message: 'not found' });
+    return send(res, 200, { workflowExecutionInfo: { execution: { workflowId: wid, runId: rid }, status: r.status }, pendingActivities: [] });
+  }
   if ((m = p.match(/^\/api\/v1\/namespaces\/default\/workflows\/([^/]+)\/runs\/([^/]+)$/))) {
-    const r = runs[decodeURIComponent(m[1])];
+    const r = lookup(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
     if (!r) return send(res, 404, { message: 'not found' });
     return send(res, 200, { workflowExecutionInfo: { status: r.status }, pendingActivities: r.pending ?? [] });
   }

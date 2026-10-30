@@ -23,6 +23,42 @@ TEMPORAL_UI=http://my-host:8233 npm run dev
 Pick a workflow on the left. A link such as `http://localhost:5173/#<workflowId>/<runId>`
 reopens the same run. **Replay sample** plays a recorded history back as a live run, without a server.
 
+## Parent, child and continued runs
+
+Workflows rarely live alone. The visualizer follows the links in the history, so you can move between related runs
+without going back to the list. Everything below is hidden for the built-in sample.
+
+**Child workflows**
+
+- A child workflow step has an **Open child** button in its details (it is disabled until the child has started), and
+  you can also **double-click the step**. **Open in Temporal UI** opens the same child in the Temporal Web UI.
+- With nothing selected, the side panel lists **Child workflows (N)** with their state: click a row to find the step on
+  the canvas, or **Open** to go into the child.
+- On the Failures tab, a failed child has **Open child to see why it failed**: the real cause is in the child's own history.
+
+**Back to parent**
+
+- A run that was started by a parent shows **↑ Back to parent** under the title. It opens the parent and selects the step
+  that started this child, so you land in context (a parent that has been continued as new is found by its exact run).
+- The **breadcrumb** next to it shows every ancestor, root first (`OrderWorkflow › ShipFlow › LabelFlow`); click any of
+  them to jump there, again landing on the step that leads towards where you were. Ancestors are read from the first
+  event of each run (one small request each, cached) and the trail is capped at 8 levels.
+
+**Continue-as-new, retries and cron**
+
+- A run that continued from another shows **← Previous run**; one that handed over to another shows **→ Next run**
+  and **⇥ Latest run**. This covers continue-as-new, workflow retries and cron schedules; the button tooltips say which.
+- **Latest run** asks the server for the newest run of that workflow ID, so it also works when the chain is long.
+  If you are already on it you get a short notice instead.
+- The end step of a continued run has **Open next run**, and double-clicking it follows the chain too.
+
+**Browser history.** Every navigation is part of the page URL (`#workflowId/runId`, plus `?node=` for the step to select
+and `?ns=` for another namespace), so the browser's **Back** and **Forward** buttons walk through the runs you opened,
+and a link to a child or to a step inside a run can be shared. Children in another namespace are opened in theirs.
+
+The relations are read in `src/core/lineage.ts` (covered by `npm test`, including a grandchild and a three-run
+continue-as-new chain from `npm run fixture:family`; the mock server serves them as `order-P-7000` and `poller-Q-8000`).
+
 ## Failure triage
 
 The side panel has two tabs, **Details** and **Failures**. The Failures tab carries a count badge, and a
@@ -146,13 +182,13 @@ are just subscribers, so nothing re-renders from scratch:
 - **State-only changes** (running, retrying, completed, failed, attempt count) edit the existing node in
   place and outline it for about 1.5 s.
 - **New steps or links** rebuild the graph but keep every node where it is (including nodes you dragged);
-  new nodes slide out of their parent. The view follows the newest step while "Follow live updates" is on.
+  new nodes slide out of their parent. The view follows the newest step while "Follow live" is on.
 - **Recent changes** in the side panel lists every transition with a time stamp.
 - **Transport:** the feed long-polls `.../history?waitNewEvent=true`, so new events arrive as soon as the
   server has them. If the server answers immediately without events, or the route is missing, it switches
   to polling once a second; the indicator in the top bar says which mode is active.
   Retry counts are not events, so `describe` is refreshed every 1.5 s while the workflow runs.
-- Untick **Follow live updates** to freeze the picture; tick it again to catch up.
+- Untick **Follow live** to freeze the picture; tick it again to catch up.
 
 To subscribe from your own code:
 
@@ -196,7 +232,9 @@ activities issued in the same task are shown as a chain.
 npm test                 # parser, diff and layout checks against a generated Java-style history
 npm run sample           # regenerate src/sample-history.json
 SPAWN_MS=9000 node scripts/mock-temporal-ui.mjs   # SPAWN_MS starts a new workflow that often
-                         # fake UI API on :8234 with one finished and one live, long-polling workflow
+                         # fake UI API on :8234: a finished run (order-A-1042), a live long-polling one (order-B-2210),
+                         # many failures (order-F-6001), a parent with children and a grandchild (order-P-7000)
+                         # and a continue-as-new chain (poller-Q-8000)
                          # (TEMPORAL_UI=http://localhost:8234 npm run dev)
 ```
 

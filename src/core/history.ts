@@ -8,6 +8,8 @@
 
 import { parseFailure, sameCause, synthFailure, type FailureItem, type FailureKind, type FailureOutcome } from './failure';
 export type { FailureItem } from './failure';
+import { nextReasonFor, startInfo, type ChildRef, type Lineage } from './lineage';
+export type { ChildRef, Lineage, RunRef } from './lineage';
 
 export type NodeKind =
   | 'start' | 'activity' | 'localActivity' | 'timer' | 'child' | 'signal' | 'update' | 'end';
@@ -49,6 +51,8 @@ export interface VNode {
   input?: string;
   result?: string;
   events: EventRef[];
+  /** For child workflow nodes: which workflow this step started. */
+  child?: ChildRef;
 }
 
 export interface VEdge { from: string; to: string }
@@ -59,6 +63,8 @@ export interface VGraph {
   workflowType: string;
   status: string;
   warnings: string[];
+  /** Parent, previous and next run, read from the history. */
+  lineage: Lineage;
   /** Every failure in the run: failed and timed-out steps, steps that are retrying, workflow-task failures. */
   failures: FailureItem[];
 }
@@ -153,6 +159,12 @@ export function buildGraph(
   const byInit = new Map<number, VNode>();
   const updateAccepted = new Map<number, VNode>();
   const failures: FailureItem[] = [];
+  const lineage: Lineage = {};
+  /** Remember which workflow (and run) a child workflow step refers to. */
+  const setChild = (n: VNode, a: Attrs) => {
+    const we = a.workflowExecution;
+    n.child = { ...(n.child ?? { workflowId: '' }), ...(we?.workflowId ? { workflowId: String(we.workflowId) } : {}), ...(we?.runId ? { runId: String(we.runId) } : {}) };
+  };
   const retryCandidate = new Map<string, { failure: unknown; eventId: number; time?: string }>();
   const addFailure = (n: VNode | undefined, kind: FailureKind, eventId: number, time: string | undefined, raw: unknown,
     outcome: FailureOutcome, o: { label?: string; fallback?: string; fallbackType?: string; info?: string; idSuffix?: string } = {}) => {
@@ -206,6 +218,7 @@ export function buildGraph(
     switch (type) {
       case 'WORKFLOW_EXECUTION_STARTED': {
         workflowType = a.workflowType?.name ?? '';
+        { const si = startInfo(a); lineage.parent = si.parent; lineage.previousRunId = si.previousRunId; lineage.origin = si.origin; lineage.firstRunId = si.firstRunId; }
         startNode = add({
           id: 'start', kind: 'start', label: workflowType || 'Workflow', state: 'completed',
           startedAt: t, closedAt: t, events: [], detail: {
@@ -323,9 +336,10 @@ export function buildGraph(
         const n = add({
           id: `child-${id}`, kind: 'child', label: a.workflowType?.name ?? 'Child workflow',
           state: 'scheduled', scheduledAt: t, events: [],
-          detail: { 'Workflow ID': String(a.workflowId ?? ''), 'Task queue': a.taskQueue?.name ?? '' },
+          detail: { 'Workflow ID': String(a.workflowId ?? ''), 'Task queue': a.taskQueue?.name ?? '', ...(a.namespace ? { Namespace: String(a.namespace) } : {}) },
           input: decodePayloads(a.input),
         });
+        n.child = { workflowId: String(a.workflowId ?? ''), namespace: a.namespace ? String(a.namespace) : undefined };
         ref(n, e, id);
         byInit.set(id, n);
         attach(n);
@@ -336,6 +350,7 @@ export function buildGraph(
         if (!n) break;
         n.state = 'running'; n.startedAt = t;
         if (a.workflowExecution?.runId) n.detail['Run ID'] = String(a.workflowExecution.runId);
+        setChild(n, a);
         ref(n, e, id);
         break;
       }
@@ -358,6 +373,8 @@ export function buildGraph(
         n.state = type.endsWith('COMPLETED') ? 'completed' : type.endsWith('FAILED') ? 'failed'
           : type.endsWith('TIMED_OUT') ? 'timedOut' : 'canceled';
         n.closedAt = t; n.durationMs = ms(n.scheduledAt, t);
+        setChild(n, a);
+        if (a.workflowExecution?.runId && !n.detail['Run ID']) n.detail['Run ID'] = String(a.workflowExecution.runId);
         if (type.endsWith('COMPLETED')) n.result = decodePayloads(a.result);
         else {
           n.failure = describeFailure(a.failure);
@@ -436,6 +453,7 @@ export function buildGraph(
           : type === 'WORKFLOW_EXECUTION_CANCELED' ? 'Canceled'
           : type === 'WORKFLOW_EXECUTION_TERMINATED' ? 'Terminated' : 'Continued as new';
         status = type.replace('WORKFLOW_EXECUTION_', '');
+        if (a.newExecutionRunId) { lineage.nextRunId = String(a.newExecutionRunId); lineage.nextReason = nextReasonFor(type); }
         const state: NodeState = type === 'WORKFLOW_EXECUTION_COMPLETED' || type === 'WORKFLOW_EXECUTION_CONTINUED_AS_NEW'
           ? 'completed' : type === 'WORKFLOW_EXECUTION_FAILED' ? 'failed'
           : type === 'WORKFLOW_EXECUTION_TIMED_OUT' ? 'timedOut' : 'canceled';
@@ -482,7 +500,7 @@ export function buildGraph(
 
   // The closing event is authoritative; describe() may be a poll behind.
   if (opts.workflowStatus && status === 'RUNNING') status = canon(opts.workflowStatus);
-  return { nodes, edges: reduceEdges(edges), workflowType, status, warnings, failures };
+  return { nodes, edges: reduceEdges(edges), workflowType, status, warnings, failures, lineage };
 }
 
 /** Drops duplicate edges and edges already implied by a longer path. */

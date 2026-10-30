@@ -45,19 +45,20 @@
     <main id="main">
       <div id="bar">
         <div class="titles">
-          <div class="title-block">
-            <div class="title-row">
-              <h2 id="wf-title">No workflow selected</h2>
-              <span id="wf-status" class="chip" hidden></span>
-            </div>
-            <div id="wf-ids" class="id-row"></div>
+          <div class="title-row">
+            <h2 id="wf-title">No workflow selected</h2>
+            <span id="wf-status" class="chip" hidden></span>
           </div>
         </div>
         <div class="row">
-          <span id="live" class="live" data-mode="idle"><span class="live-dot"></span><span id="live-text">Not connected</span></span>
-          <label class="check"><input id="auto" type="checkbox" checked /> Follow live updates</label>
+          <span id="live" class="live" data-mode="idle" title="Live: new events arrive as they happen"><span class="live-dot"></span><span id="live-text">Not connected</span></span>
+          <label class="check"><input id="auto" type="checkbox" checked /> Follow live</label>
           <button id="fit" type="button">Fit to view</button>
           <a id="open-ui" class="btn" target="_blank" rel="noopener noreferrer" hidden>Open in Temporal UI</a>
+        </div>
+        <div id="bar-sub">
+          <div id="wf-ids" class="id-row"></div>
+          <div id="wf-nav" class="nav-row" hidden></div>
         </div>
       </div>
       <div id="banner" role="alert" hidden></div>

@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "test": "tsx scripts/selftest.ts",
     "sample": "tsx scripts/make-sample.ts",
-    "fixture:failing": "tsx scripts/make-failing.ts"
+    "fixture:failing": "tsx scripts/make-failing.ts",
+    "fixture:family": "tsx scripts/make-family.ts"
   },
   "dependencies": {
     "@comfyorg/litegraph": "^0.17.2"

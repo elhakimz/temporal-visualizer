@@ -94,6 +94,20 @@ export class TemporalApi implements HistoryApi {
     };
   }
 
+  /** Run id of the latest run of a workflow id: what the Temporal UI opens when you give it just the workflow id. */
+  async latestRun(workflowId: string): Promise<string> {
+    const path = `${this.ns()}/workflows/${encodeURIComponent(workflowId)}`;
+    const data = await this.get(path);
+    const id = data.workflowExecutionInfo?.execution?.runId;
+    if (!id) throw new ApiError(`No run found for workflow ${workflowId}`, `${this.base}${path}`);
+    return String(id);
+  }
+
+  /** First event of a run: enough to see who started it (parent) and what it continued from. */
+  async firstEvent(workflowId: string, runId: string): Promise<HistoryEvent | undefined> {
+    return (await this.historyPage(workflowId, runId, { pageSize: 1 })).events[0];
+  }
+
   /**
    * One page of history from the gRPC-gateway route.  With `wait` the server holds the
    * request open until new events exist (the same mechanism as `temporal workflow show --follow`).

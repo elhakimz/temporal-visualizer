@@ -205,6 +205,8 @@ export class GraphView {
   /** While scrubbing, every moment is laid out like the final graph so nodes do not shuffle between steps. */
   private pinned: Map<string, { x: number; cy: number }> | null = null;
   private selectedId: string | null = null;
+  /** Called when a node is double-clicked (the page opens child workflows and next runs this way). */
+  onNodeDblClick?: (v: VNode) => void;
   private resizeObserver: ResizeObserver;
 
   constructor(private el: HTMLCanvasElement, private onSelect: (v: VNode | null) => void) {
@@ -241,10 +243,20 @@ export class GraphView {
     this.resize();
   }
 
+  private lastSize: [number, number] | null = null;
+
   resize() {
     const parent = this.el.parentElement!;
     const w = Math.max(1, parent.clientWidth);
     const h = Math.max(1, parent.clientHeight);
+    // Keep whatever is in the middle of the view in the middle when the canvas changes size
+    // (replay bar appearing, sidebar dragged or collapsed), so a step you just jumped to stays centred.
+    if (this.lastSize && this.nodes.size && (this.lastSize[0] !== w || this.lastSize[1] !== h)) {
+      const ds = this.canvas.ds, k = ds.scale;
+      const gx = this.lastSize[0] / 2 / k - ds.offset[0], gy = this.lastSize[1] / 2 / k - ds.offset[1];
+      ds.offset = [w / 2 / k - gx, h / 2 / k - gy];
+    }
+    this.lastSize = [w, h];
     this.el.style.width = `${w}px`;
     this.el.style.height = `${h}px`;
     this.canvas.resize(w, h);   // also resizes the background layer
@@ -389,6 +401,7 @@ export class GraphView {
       const layoutPos: Pos = pin ? [pin.x, pin.cy - p.h / 2] : [p.x, p.y];
       const node = LiteGraph.createNode('temporal/step') as StepNode;
       node.v = v;
+      node.onDblClick = () => { if (node.v) this.onNodeDblClick?.(node.v); };
       this.paint(node);
       // Links meet the outline: an arrowhead on the way in, nothing visible on the way out.
       for (let i = 0; i < p.inputs; i++) {

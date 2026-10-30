@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { buildGraph, canon, decodePayloads } from '../src/core/history';
 import { layoutGraph } from '../src/core/layout';
+import { reasonWords, resolveAncestors, startInfo } from '../src/core/lineage';
 import { classifyFrame, failureText, groupFailures, groupsText, normalizeMessage, parseFailure, shortType } from '../src/core/failure';
 import { buildSteps, eventWords, fmtOffset, graphAtStep, nearestStep, playDelay, stepPositions } from '../src/core/timeline';
 import { DEFAULT_WIDTH, MIN_WIDTH, clampWidth, maxWidth } from '../src/core/sidebar-size';
@@ -177,6 +178,53 @@ const retrying = buildGraph(liveEvs, { pendingActivities: [{ activityId: '4', st
 assert.equal(retrying.failures.length, 1); assert.equal(retrying.failures[0].outcome, 'retrying'); assert.equal(retrying.failures[0].detail.type, 'IOException');
 assert.equal(buildGraph(evs.slice(0, evs.length - 3)).failures.filter((x) => x.outcome === 'retrying').length, 0);
 console.log('failure triage ok');
+
+// ---- parent / child / continue-as-new navigation ----
+const fam = JSON.parse(readFileSync(new URL('./fixtures/family.json', import.meta.url), 'utf8'));
+const byRun = new Map<string, any>(fam.runs.map((r: any) => [`${r.workflowId}/${r.runId}`, r]));
+const graphOf = (wid: string, rid: string) => buildGraph(byRun.get(`${wid}/${rid}`).events);
+const parentG = graphOf('order-P-7000', 'run-p');
+const kids = parentG.nodes.filter((n) => n.kind === 'child');
+assert.deepEqual(kids.map((k) => [k.label, k.child!.workflowId, k.child!.runId]), [['PaymentFlow', 'pay-P-7000', 'run-pay'], ['ShipFlow', 'ship-P-7000', 'run-ship']]);
+assert.equal(parentG.lineage.parent, undefined); assert.equal(parentG.lineage.nextRunId, undefined);
+// a child names its parent and the exact event that started it, which is the parent's child node
+const payG = graphOf('pay-P-7000', 'run-pay');
+assert.deepEqual([payG.lineage.parent!.workflowId, payG.lineage.parent!.runId, payG.lineage.parent!.namespace], ['order-P-7000', 'run-p', 'default']);
+const target = parentG.nodes.find((n) => n.id === `child-${payG.lineage.parent!.initiatedEventId}`)!;
+assert.equal(target.child!.workflowId, 'pay-P-7000', 'parentInitiatedEventId finds the child step in the parent graph');
+const shipG = graphOf('ship-P-7000', 'run-ship');
+assert.equal(parentG.nodes.find((n) => n.id === `child-${shipG.lineage.parent!.initiatedEventId}`)!.child!.workflowId, 'ship-P-7000');
+assert.equal(shipG.nodes.find((n) => n.kind === 'child')!.child!.workflowId, 'label-P-7000');
+// ancestors of the grandchild, nearest first, with the child step to focus in each
+const first = async (r: { workflowId: string; runId: string }) => { const run = byRun.get(`${r.workflowId}/${r.runId}`); return run ? startInfo(run.events[0].workflowExecutionStartedEventAttributes) : undefined; };
+const anc = await resolveAncestors(first, graphOf('label-P-7000', 'run-label').lineage.parent);
+assert.deepEqual(anc.map((x) => [x.ref.workflowId, x.type]), [['ship-P-7000', 'ShipFlow'], ['order-P-7000', 'OrderWorkflow']]);
+assert.equal(shipG.nodes.find((n) => n.id === `child-${anc[0].focusChild}`)!.label, 'LabelFlow');
+assert.equal(parentG.nodes.find((n) => n.id === `child-${anc[1].focusChild}`)!.label, 'ShipFlow');
+assert.equal((await resolveAncestors(first, undefined)).length, 0);
+assert.equal((await resolveAncestors(async (r) => ({ type: 'Loop', parent: { workflowId: r.workflowId, runId: r.runId } }), { workflowId: 'a', runId: '1' })).length, 1, 'a loop stops');
+assert.equal((await resolveAncestors(async (r) => ({ type: 'Deep', parent: { workflowId: r.workflowId + 'x', runId: '1' } }), { workflowId: 'a', runId: '1' }, 3)).length, 3, 'depth is capped');
+assert.deepEqual((await resolveAncestors(async () => { throw new Error('offline'); }, { workflowId: 'a', runId: '1' })).map((x) => x.type), [''], 'a failed lookup still gives the crumb');
+// continue-as-new chain
+const q1 = graphOf('poller-Q-8000', 'run-q1'), q2 = graphOf('poller-Q-8000', 'run-q2'), q3 = graphOf('poller-Q-8000', 'run-q3');
+assert.deepEqual([q1.lineage.previousRunId, q1.lineage.nextRunId, q1.lineage.nextReason, q1.status], [undefined, 'run-q2', 'continued-as-new', 'CONTINUED_AS_NEW']);
+assert.deepEqual([q2.lineage.previousRunId, q2.lineage.origin, q2.lineage.nextRunId, q2.lineage.firstRunId], ['run-q1', 'continued-as-new', 'run-q3', 'run-q1']);
+assert.deepEqual([q3.lineage.previousRunId, q3.lineage.nextRunId, q3.status], ['run-q2', undefined, 'COMPLETED']);
+assert.equal(q1.nodes.find((n) => n.kind === 'end')!.detail['New run ID'], 'run-q2');
+// retries and cron runs also hand over to a new run
+const mk = (type: string, extra: any) => [{ eventId: '1', eventTime: '2026-10-25T10:00:00Z', eventType: 'EVENT_TYPE_WORKFLOW_EXECUTION_STARTED', workflowExecutionStartedEventAttributes: { workflowType: { name: 'W' } } },
+  { eventId: '2', eventTime: '2026-10-25T10:00:01Z', eventType: `EVENT_TYPE_${type}`, [type.split('_').map((p, i) => (i ? p[0] + p.slice(1).toLowerCase() : p.toLowerCase())).join('') + 'EventAttributes']: extra }];
+assert.equal(buildGraph(mk('WORKFLOW_EXECUTION_FAILED', { newExecutionRunId: 'r2', failure: { message: 'x' } })).lineage.nextReason, 'retry');
+assert.equal(buildGraph(mk('WORKFLOW_EXECUTION_COMPLETED', { newExecutionRunId: 'r2' })).lineage.nextReason, 'cron');
+assert.equal(startInfo({ initiator: 'CONTINUE_AS_NEW_INITIATOR_RETRY', continuedExecutionRunId: 'r0' }).origin, 'retry');
+assert.equal(startInfo({ initiator: 'CronSchedule', continuedExecutionRunId: 'r0' }).origin, 'cron');
+assert.equal(startInfo({ continuedExecutionRunId: 'r0' }).origin, 'continued-as-new');
+assert.equal(startInfo({}).origin, undefined); assert.equal(startInfo({}).parent, undefined);
+assert.equal(reasonWords('cron'), 'cron schedule');
+// not-yet-started child: known workflow id, no run id yet
+const unstarted = buildGraph(mk('START_CHILD_WORKFLOW_EXECUTION_INITIATED', { workflowId: 'c-1', workflowType: { name: 'C' }, workflowTaskCompletedEventId: '1' }));
+assert.deepEqual(unstarted.nodes.find((n) => n.kind === 'child')!.child, { workflowId: 'c-1', namespace: undefined });
+console.log('navigation ok');
 
 const pos = layoutGraph(g);
 assert.equal(pos.size, g.nodes.length);

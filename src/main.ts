@@ -1,8 +1,9 @@
 import './styles.css';
 import { diffGraphs } from './core/diff';
 import { NO_FILTER, applyFilter, failureCount, isUnfiltered, matches, type ListFilter } from './core/filter';
-import type { HistoryEvent, VGraph } from './core/history';
+import type { HistoryEvent, VGraph, VNode } from './core/history';
 import { classifyFrame, failureText, groupFailures, groupsText, outcomeWords, shortType, type FailureItem } from './core/failure';
+import { reasonWords, resolveAncestors, startInfo, type Ancestor, type RunRef, type StartInfo } from './core/lineage';
 import { fmtOffset } from './core/timeline';
 import { copyButton, h, iconOpen } from './dom';
 import { WorkflowFeed, type FeedEvent } from './feed';
@@ -19,7 +20,7 @@ const el = {
   reload: $('reload'), filters: $('filters'), note: $('new-note'), announce: $('announce'), sample: $('sample'), title: $('wf-title'), status: $('wf-status'),
   auto: $<HTMLInputElement>('auto'), fit: $('fit'), banner: $('banner'), empty: $('empty'),
   canvas: $<HTMLCanvasElement>('c'), detail: $('detail-body'), live: $('live'), liveText: $('live-text'),
-  ids: $('wf-ids'), openUi: $<HTMLAnchorElement>('open-ui'), tabDetails: $('tab-details'), tabFailures: $('tab-failures'), failCount: $('fail-count'),
+  ids: $('wf-ids'), nav: $('wf-nav'), openUi: $<HTMLAnchorElement>('open-ui'), tabDetails: $('tab-details'), tabFailures: $('tab-failures'), failCount: $('fail-count'),
 };
 
 const sidebar = initSidebar({
@@ -37,7 +38,12 @@ const statusText = (s: string) => s.charAt(0) + s.slice(1).toLowerCase().replace
 let api = new TemporalApi(el.ns.value);
 let feed: WorkflowFeed | null = null;
 let replay: ReplayApi | null = null;
-let current: { workflowId: string; runId: string; sample?: boolean } | null = null;
+let current: { workflowId: string; runId: string; namespace: string; sample?: boolean } | null = null;
+/** Parents of the run on screen, nearest first; filled in after the run has loaded. */
+let ancestors: Ancestor[] = [];
+/** A step to select once the run has loaded (used when coming back to a parent). */
+let pendingFocus: string | null = null;
+const startCache = new Map<string, Promise<StartInfo | undefined>>();
 let graph: VGraph | null = null;
 let selectedId: string | null = null;
 let changes: { id: number; time: string; text: string }[] = [];
@@ -50,6 +56,8 @@ const groupOpen = new Map<string, boolean>();
 const traceOpen = new Set<string>();
 
 const view = new GraphView(el.canvas, (v) => { selectedId = v?.id ?? null; if (v) tab = 'details'; renderDetail(); });
+// Double-click a child workflow to open it, or a run that continued as new to follow it.
+view.onNodeDblClick = (v) => { if (v.kind === 'child') openChild(v); else if (v.kind === 'end' && runGraph?.lineage.nextRunId) goNext(); };
 
 // Replay scrubber: steps through a finished run. Each step is applied to the canvas like a live update.
 const scrubber = new Scrubber($('scrubber'), (c) => {
@@ -61,6 +69,7 @@ function offerReplay(events: HistoryEvent[], finalGraph: VGraph) {
   if (finalGraph.status === 'RUNNING') return;
   view.pinLayout(finalGraph);
   scrubber.load(events, finalGraph);
+  renderDetail();                       // the side panel can now list the timeline
 }
 function closeReplay() { scrubber.unload(); view.pinLayout(null); }
 
@@ -88,8 +97,8 @@ const fmtTime = (s?: string) => (s ? clock(new Date(s)) + '.' + String(new Date(
 function setLive(mode: 'idle' | 'long-poll' | 'poll' | 'closed' | 'paused' | 'error') {
   el.live.dataset.mode = mode;
   el.liveText.textContent = {
-    idle: 'Not connected', 'long-poll': 'Live, pushed by server', poll: 'Live, polling every second',
-    closed: 'Workflow closed', paused: 'Updates paused', error: 'Connection problem',
+    idle: 'Not connected', 'long-poll': 'Live', poll: 'Live (polling)',
+    closed: 'Closed', paused: 'Paused', error: 'Connection problem',
   }[mode];
 }
 
@@ -311,14 +320,17 @@ function stopFeed() {
   feed = null;
 }
 
-function openWorkflow(workflowId: string, runId: string, source?: HistoryApi, opts: { resumeFrom?: VGraph | null } = {}) {
+function openWorkflow(workflowId: string, runId: string, source?: HistoryApi, opts: { resumeFrom?: VGraph | null; namespace?: string; focus?: string | null; fromHash?: boolean } = {}) {
   stopFeed();
   closeReplay();
   if (!source) { replay?.stop(); replay = null; }
-  current = { workflowId, runId, sample: source !== undefined };
+  const namespace = opts.namespace ?? api.namespace;
+  current = { workflowId, runId, namespace, sample: source !== undefined };
+  pendingFocus = opts.focus ?? null;
+  if (!opts.resumeFrom) ancestors = [];
   if (!opts.resumeFrom) { graph = null; runGraph = null; selectedId = null; changes = []; groupOpen.clear(); traceOpen.clear(); }
-  if (!source) location.hash = `${encodeURIComponent(workflowId)}/${encodeURIComponent(runId)}`;
-  const f = new WorkflowFeed(source ?? api, workflowId, runId);
+  if (!source && !opts.fromHash) location.hash = hashFor(workflowId, runId, namespace, opts.focus);
+  const f = new WorkflowFeed(source ?? apiFor(namespace), workflowId, runId);
   feed = f;
   f.subscribe((e) => { if (feed === f) onFeed(e, opts.resumeFrom ?? null); });
   setLive(el.auto.checked ? 'long-poll' : 'paused');
@@ -338,6 +350,8 @@ function onFeed(e: FeedEvent, resumeFrom: VGraph | null) {
       else view.reset(e.graph, { fit: true });
       renderDetail();
       if (e.graph.status !== 'RUNNING') { setLive('closed'); offerReplay(feed!.history, e.graph); }
+      if (pendingFocus) { const id = pendingFocus; pendingFocus = null; view.focusNode(id); }
+      if (!resumeFrom) loadAncestors(e.graph);
       break;
     }
     case 'update': {
@@ -370,11 +384,12 @@ function renderHeader(g: VGraph) {
   el.ids.replaceChildren(chip('workflow', 'workflow ID', wid), chip('run', 'run ID', rid));
   el.openUi.hidden = !!current?.sample || !wid;
   if (!el.openUi.hidden) { el.openUi.href = uiUrl(wid, rid); el.openUi.replaceChildren(iconOpen(), 'Open in Temporal UI'); }
+  renderNav();
 }
 
 /** Page of a run in the Temporal Web UI. */
-const uiUrl = (wid: string, rid: string) =>
-  `${__TEMPORAL_UI_URL__}/namespaces/${encodeURIComponent(api.namespace)}/workflows/${encodeURIComponent(wid)}/${encodeURIComponent(rid)}/history`;
+const uiUrl = (wid: string, rid: string, ns: string = current?.namespace ?? api.namespace) =>
+  `${__TEMPORAL_UI_URL__}/namespaces/${encodeURIComponent(ns)}/workflows/${encodeURIComponent(wid)}/${encodeURIComponent(rid)}/history`;
 function openLink(href: string, label: string) {
   const a = h('a', { class: 'btn', href, target: '_blank', rel: 'noopener noreferrer' }, label);
   a.prepend(iconOpen()); return a;
@@ -409,11 +424,10 @@ function renderDetail() {
     h('h3', {}, v.label), h('div', { class: 'sub' }, v.kind === 'localActivity' ? 'Local activity' : v.kind),
     h('dl', {}, ...rows.flatMap(([k, val]) => [h('dt', {}, k), h('dd', {}, val, ...(/\bID$/i.test(k) && val ? [copyButton(k, () => val)] : []))])),
   ];
-  if (v.kind === 'child' && v.detail['Workflow ID'] && v.detail['Run ID'] && !current?.sample) {
-    parts.push(h('div', { class: 'actions' }, openLink(uiUrl(v.detail['Workflow ID'], v.detail['Run ID']), 'Open child in Temporal UI')));
-  }
+  const nav = v.kind === 'child' ? childActions(v) : v.kind === 'end' ? endActions() : null;
+  if (nav) parts.push(nav);
   const mine = (graph.failures ?? []).filter((f) => f.nodeId === v.id);
-  if (mine.length) mine.forEach((f) => parts.push(h('h4', {}, mine.length > 1 ? 'Failure' : 'Failure'), failureBlock(f)));
+  if (mine.length) mine.forEach((f) => parts.push(h('h4', {}, 'Failure'), failureBlock(f, { openChild: false })));
   else if (v.failure) parts.push(h('h4', {}, 'Failure'), h('pre', { class: 'err' }, v.failure));
   if (v.input) parts.push(h('h4', {}, 'Input'), h('pre', {}, v.input));
   if (v.result) parts.push(h('h4', {}, 'Result'), h('pre', {}, v.result));
@@ -441,6 +455,8 @@ function renderSummary(g: VGraph) {
     b.addEventListener('click', () => setTab('failures'));
     parts.push(b);
   } else if (end?.failure) parts.push(h('h4', {}, 'Workflow failure'), h('pre', { class: 'err' }, end.failure));
+  const kids = (runGraph?.nodes ?? []).filter((n) => n.kind === 'child' && n.child);
+  if (kids.length && !current?.sample) parts.push(h('h4', {}, `Child workflows (${kids.length})`), childList(kids));
   if (scrubber.visible) {
     parts.push(h('h4', {}, 'Timeline'), timelineList());
   } else if (changes.length) {
@@ -448,6 +464,147 @@ function renderSummary(g: VGraph) {
       h('li', i === 0 ? { class: 'fresh' } : {}, h('span', { class: 'tm' }, c.time), h('span', {}, c.text)))));
   }
   el.detail.replaceChildren(...parts);
+}
+
+// ---------- navigating between related runs ----------
+const apiFor = (ns?: string) => (!ns || ns === api.namespace ? api : new TemporalApi(ns));
+
+interface Target { workflowId: string; runId?: string; namespace?: string; focus?: string | null }
+
+/** Address of a run in the page URL, so links, reloads and the browser's back button all work. */
+function hashFor(wid: string, rid: string, ns?: string, focus?: string | null) {
+  const q = new URLSearchParams();
+  if (ns && ns !== api.namespace) q.set('ns', ns);
+  if (focus) q.set('node', focus);
+  return `${encodeURIComponent(wid)}/${encodeURIComponent(rid)}${[...q].length ? `?${q}` : ''}`;
+}
+function parseHash(): { workflowId: string; runId: string; namespace?: string; focus?: string } | null {
+  const [path, qs = ''] = location.hash.slice(1).split('?');
+  const [workflowId, runId] = path.split('/').map(decodeURIComponent);
+  if (!workflowId || !runId) return null;
+  const q = new URLSearchParams(qs);
+  return { workflowId, runId, namespace: q.get('ns') ?? undefined, focus: q.get('node') ?? undefined };
+}
+
+let noticeTimer: number | undefined;
+function notice(msg: string) {
+  showBanner(msg, true);
+  window.clearTimeout(noticeTimer);
+  noticeTimer = window.setTimeout(() => { if (el.banner.textContent === msg) showBanner(null); }, 3500);
+}
+
+/** Opens a run; without a run id it opens the latest run of that workflow id. */
+async function go(t: Target) {
+  try {
+    const ns = t.namespace ?? current?.namespace ?? api.namespace;
+    const runId = t.runId || await apiFor(ns).latestRun(t.workflowId);
+    if (current && !current.sample && current.workflowId === t.workflowId && current.runId === runId && current.namespace === ns && !t.focus) {
+      notice('You are already viewing the latest run.'); return;
+    }
+    openWorkflow(t.workflowId, runId, undefined, { namespace: ns, focus: t.focus ?? null });
+  } catch (err) { showBanner(explain(err)); }
+}
+function openChild(n: VNode) {
+  const c = n.child;
+  if (!c?.workflowId) return;
+  if (!c.runId) { notice('That child workflow has not started yet.'); return; }
+  void go({ workflowId: c.workflowId, runId: c.runId, namespace: c.namespace ?? current?.namespace });
+}
+function goParent() {
+  const p = runGraph?.lineage.parent;
+  if (!p) return;
+  // Land on the step that started this run, so you see it in context.
+  void go({ workflowId: p.workflowId, runId: p.runId || undefined, namespace: p.namespace ?? current?.namespace, focus: p.initiatedEventId ? `child-${p.initiatedEventId}` : undefined });
+}
+function goPrevious() { const id = runGraph?.lineage.previousRunId; if (id && current) void go({ workflowId: current.workflowId, runId: id, namespace: current.namespace }); }
+function goNext() { const id = runGraph?.lineage.nextRunId; if (id && current) void go({ workflowId: current.workflowId, runId: id, namespace: current.namespace }); }
+function goLatest() { if (current) void go({ workflowId: current.workflowId, namespace: current.namespace }); }
+
+/** First event of a run, read once per run: who started it and what it continued from. */
+function startOf(ref: RunRef): Promise<StartInfo | undefined> {
+  const ns = ref.namespace ?? current?.namespace ?? api.namespace;
+  const key = `${ns}/${ref.workflowId}/${ref.runId}`;
+  let p = startCache.get(key);
+  if (!p) {
+    p = !ref.runId ? Promise.resolve(undefined) : apiFor(ns).firstEvent(ref.workflowId, ref.runId).then((e) => {
+      const a = e ? Object.entries(e).find(([k]) => k.endsWith('EventAttributes'))?.[1] : undefined;
+      return a ? startInfo(a as Record<string, unknown>) : undefined;
+    });
+    startCache.set(key, p);
+    p.catch(() => startCache.delete(key));
+  }
+  return p;
+}
+const runKey = () => (current ? `${current.namespace}/${current.workflowId}/${current.runId}` : '');
+function loadAncestors(g: VGraph) {
+  const parent = g.lineage.parent, key = runKey();
+  if (!parent || current?.sample) { ancestors = []; return; }
+  void resolveAncestors(startOf, parent).then((list) => {
+    if (key !== runKey()) return;                       // the user has moved on
+    ancestors = list; renderNav();
+  });
+}
+
+function renderNav() {
+  const g = runGraph, L = g?.lineage;
+  const items: Node[] = [];
+  if (g && L && current && !current.sample) {
+    const btn = (arrow: string, label: string, title: string, fn: () => void, cls = '') => {
+      const b = h('button', { type: 'button', class: `nav-btn ${cls}`.trim(), title }, h('span', { class: 'nav-arrow', 'aria-hidden': 'true' }, arrow), label);
+      b.addEventListener('click', fn); return b;
+    };
+    if (L.parent) items.push(btn('↑', 'Back to parent', `Open the parent workflow ${L.parent.workflowId}`, goParent, 'parent'));
+    if (L.previousRunId) items.push(btn('←', 'Previous run', `This run continued from run ${L.previousRunId} (${reasonWords(L.origin)})`, goPrevious));
+    if (L.nextRunId) {
+      items.push(btn('→', 'Next run', `Continues in run ${L.nextRunId} (${reasonWords(L.nextReason)})`, goNext));
+      items.push(btn('⇥', 'Latest run', 'Jump to the latest run of this workflow', goLatest));
+    }
+    if (ancestors.length) {
+      const trail = h('div', { class: 'crumbs', 'aria-label': 'Parent workflows' });
+      [...ancestors].reverse().forEach((a) => {
+        const c = h('button', { type: 'button', class: 'crumb', title: `${a.ref.workflowId}: open` }, a.type || a.ref.workflowId);
+        c.addEventListener('click', () => void go({ workflowId: a.ref.workflowId, runId: a.ref.runId || undefined, namespace: a.ref.namespace ?? current?.namespace, focus: a.focusChild ? `child-${a.focusChild}` : undefined }));
+        trail.append(c, h('span', { class: 'crumb-sep', 'aria-hidden': 'true' }, '›'));
+      });
+      trail.append(h('span', { class: 'crumb current', 'aria-current': 'page' }, g.workflowType || 'this run'));
+      items.push(trail);
+    }
+  }
+  el.nav.replaceChildren(...items);
+  el.nav.hidden = items.length === 0;
+}
+
+function childActions(v: VNode): HTMLElement | null {
+  const c = v.child;
+  if (current?.sample || !c?.workflowId) return null;
+  const open = h('button', { type: 'button', class: 'btn primary', ...(c.runId ? { title: 'Open this child workflow here (or double-click the step)' } : { disabled: '', title: 'The child workflow has not started yet' }) }, 'Open child');
+  open.addEventListener('click', () => openChild(v));
+  const box = h('div', { class: 'actions' }, open);
+  if (c.runId) box.append(openLink(uiUrl(c.workflowId, c.runId, c.namespace ?? current?.namespace), 'Open in Temporal UI'));
+  return box;
+}
+function endActions(): HTMLElement | null {
+  const L = runGraph?.lineage;
+  if (current?.sample || !L?.nextRunId) return null;
+  const next = h('button', { type: 'button', class: 'btn primary', title: 'Or double-click the step' }, `Open next run (${reasonWords(L.nextReason)})`);
+  next.addEventListener('click', goNext);
+  const latest = h('button', { type: 'button', class: 'btn' }, 'Latest run');
+  latest.addEventListener('click', goLatest);
+  return h('div', { class: 'actions' }, next, latest);
+}
+/** Child workflows of this run: click a row to find the step, or Open to go into the child. */
+function childList(kids: VNode[]): HTMLElement {
+  const ul = h('ul', { class: 'kids' });
+  for (const n of kids) {
+    const row = h('button', { type: 'button', class: 'kid-main', title: 'Show this step on the canvas' },
+      h('span', { class: 'kid-top' }, h('span', { class: 'kid-label' }, n.label), h('span', { class: 'kid-state', 'data-state': n.state }, STATE_COLOR[n.state].label.toLowerCase())),
+      h('span', { class: 'kid-id' }, n.child!.workflowId));
+    row.addEventListener('click', () => { view.focusNode(n.id); });
+    const open = h('button', { type: 'button', class: 'kid-open', ...(n.child!.runId ? {} : { disabled: '', title: 'Not started yet' }) }, 'Open');
+    open.addEventListener('click', () => openChild(n));
+    ul.append(h('li', {}, row, open));
+  }
+  return ul;
 }
 
 // ---------- failure triage ----------
@@ -486,7 +643,7 @@ function linkBlock(l: FailureItem['detail']['chain'][number], root: boolean): HT
   return box;
 }
 /** One failure in full: the root cause with its stack trace first, the wrapping failures folded below. */
-function failureBlock(it: FailureItem): HTMLElement {
+function failureBlock(it: FailureItem, o: { openChild?: boolean } = {}): HTMLElement {
   const start = runGraph?.nodes.find((n) => n.kind === 'start')?.startedAt;
   const ms = it.time && start ? Date.parse(it.time) - Date.parse(start) : NaN;
   const chain = it.detail.chain;
@@ -496,6 +653,12 @@ function failureBlock(it: FailureItem): HTMLElement {
       h('span', { class: 'f-when' }, `${Number.isFinite(ms) ? fmtOffset(ms) + ' · ' : ''}event #${it.eventId}`),
       copyButton('failure details', () => failureText(it), 'Copy failure')),
     linkBlock(chain[chain.length - 1], true));
+  const failing = it.kind === 'child' ? graph?.nodes.find((n) => n.id === it.nodeId) : undefined;
+  if (o.openChild !== false && failing?.child?.runId && !current?.sample) {
+    const b = h('button', { type: 'button', class: 'btn' }, 'Open child to see why it failed');
+    b.addEventListener('click', () => openChild(failing));
+    box.append(h('div', { class: 'actions' }, b));
+  }
   if (chain.length > 1) {
     const det = h('details', { class: 'f-wrap' }, h('summary', {}, `Wrapped by ${chain.length - 1} failure${chain.length > 2 ? 's' : ''}`));
     [...chain.slice(0, -1)].reverse().forEach((l) => det.append(linkBlock(l, false)));
@@ -603,6 +766,12 @@ window.addEventListener('beforeunload', () => { stopFeed(); replay?.stop(); });
 
 renderDetail();
 loadList().then(() => {
-  const [w, r] = location.hash.slice(1).split('/').map(decodeURIComponent);
-  if (w && r) openWorkflow(w, r);
+  const t = parseHash();
+  if (t) openWorkflow(t.workflowId, t.runId, undefined, { namespace: t.namespace, focus: t.focus, fromHash: true });
+});
+// The browser's back and forward buttons walk through the runs you opened (parent, child, previous run...).
+window.addEventListener('hashchange', () => {
+  const t = parseHash();
+  if (!t || (current && !current.sample && t.workflowId === current.workflowId && t.runId === current.runId)) return;
+  openWorkflow(t.workflowId, t.runId, undefined, { namespace: t.namespace, focus: t.focus, fromHash: true });
 });

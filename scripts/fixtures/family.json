@@ -1,0 +1,1317 @@
+{
+  "runs": [
+    {
+      "workflowId": "order-P-7000",
+      "runId": "run-p",
+      "type": "OrderWorkflow",
+      "status": "Failed",
+      "startMinsAgo": 40,
+      "events": [
+        {
+          "eventId": "1",
+          "eventTime": "2026-10-25T11:00:00.000Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+          "workflowExecutionStartedEventAttributes": {
+            "workflowType": {
+              "name": "OrderWorkflow"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "input": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "eyJvcmRlcklkIjoiUC03MDAwIn0="
+                }
+              ]
+            },
+            "attempt": 1,
+            "firstExecutionRunId": "run-p"
+          }
+        },
+        {
+          "eventId": "2",
+          "eventTime": "2026-10-25T11:00:00.040Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "3",
+          "eventTime": "2026-10-25T11:00:00.045Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "2"
+          }
+        },
+        {
+          "eventId": "4",
+          "eventTime": "2026-10-25T11:00:00.053Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "2",
+            "startedEventId": "3"
+          }
+        },
+        {
+          "eventId": "5",
+          "eventTime": "2026-10-25T11:00:00.056Z",
+          "eventType": "EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED",
+          "startChildWorkflowExecutionInitiatedEventAttributes": {
+            "namespace": "default",
+            "workflowId": "pay-P-7000",
+            "workflowType": {
+              "name": "PaymentFlow"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "workflowTaskCompletedEventId": "4",
+            "input": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "eyJhbW91bnQiOjU1fQ=="
+                }
+              ]
+            }
+          }
+        },
+        {
+          "eventId": "6",
+          "eventTime": "2026-10-25T11:00:00.059Z",
+          "eventType": "EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED",
+          "startChildWorkflowExecutionInitiatedEventAttributes": {
+            "namespace": "default",
+            "workflowId": "ship-P-7000",
+            "workflowType": {
+              "name": "ShipFlow"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "workflowTaskCompletedEventId": "4",
+            "input": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "eyJza3UiOiJTS1UtNzcifQ=="
+                }
+              ]
+            }
+          }
+        },
+        {
+          "eventId": "7",
+          "eventTime": "2026-10-25T11:00:00.069Z",
+          "eventType": "EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED",
+          "childWorkflowExecutionStartedEventAttributes": {
+            "initiatedEventId": "5",
+            "workflowExecution": {
+              "workflowId": "pay-P-7000",
+              "runId": "run-pay"
+            }
+          }
+        },
+        {
+          "eventId": "8",
+          "eventTime": "2026-10-25T11:00:00.073Z",
+          "eventType": "EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED",
+          "childWorkflowExecutionStartedEventAttributes": {
+            "initiatedEventId": "6",
+            "workflowExecution": {
+              "workflowId": "ship-P-7000",
+              "runId": "run-ship"
+            }
+          }
+        },
+        {
+          "eventId": "9",
+          "eventTime": "2026-10-25T11:00:00.773Z",
+          "eventType": "EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_COMPLETED",
+          "childWorkflowExecutionCompletedEventAttributes": {
+            "initiatedEventId": "5",
+            "workflowExecution": {
+              "workflowId": "pay-P-7000",
+              "runId": "run-pay"
+            },
+            "result": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "InBhaWQi"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "eventId": "10",
+          "eventTime": "2026-10-25T11:00:01.673Z",
+          "eventType": "EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_FAILED",
+          "childWorkflowExecutionFailedEventAttributes": {
+            "initiatedEventId": "6",
+            "workflowExecution": {
+              "workflowId": "ship-P-7000",
+              "runId": "run-ship"
+            },
+            "failure": {
+              "message": "Child Workflow execution failed",
+              "source": "JavaSDK",
+              "stackTrace": "",
+              "childWorkflowExecutionFailureInfo": {
+                "workflowType": {
+                  "name": "ShipFlow"
+                },
+                "workflowExecution": {
+                  "workflowId": "ship-P-7000",
+                  "runId": "run-ship"
+                },
+                "retryState": "RETRY_STATE_NON_RETRYABLE_FAILURE"
+              },
+              "cause": {
+                "message": "Child Workflow execution failed",
+                "source": "JavaSDK",
+                "stackTrace": "",
+                "childWorkflowExecutionFailureInfo": {
+                  "workflowType": {
+                    "name": "LabelFlow"
+                  },
+                  "workflowExecution": {
+                    "workflowId": "label-P-7000",
+                    "runId": "run-label"
+                  },
+                  "retryState": "RETRY_STATE_NON_RETRYABLE_FAILURE"
+                },
+                "cause": {
+                  "message": "Activity task failed",
+                  "source": "JavaSDK",
+                  "stackTrace": "",
+                  "activityFailureInfo": {
+                    "activityType": {
+                      "name": "PrintLabel"
+                    },
+                    "activityId": "1",
+                    "retryState": "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+                  },
+                  "cause": {
+                    "message": "Printer offline: label queue 3",
+                    "source": "JavaSDK",
+                    "stackTrace": "com.acme.label.PrinterOfflineException: Printer offline: label queue 3\n\tat com.acme.Demo.run(Demo.java:42)",
+                    "applicationFailureInfo": {
+                      "type": "com.acme.label.PrinterOfflineException"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "eventId": "11",
+          "eventTime": "2026-10-25T11:00:01.713Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "12",
+          "eventTime": "2026-10-25T11:00:01.718Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "11"
+          }
+        },
+        {
+          "eventId": "13",
+          "eventTime": "2026-10-25T11:00:01.726Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "11",
+            "startedEventId": "12"
+          }
+        },
+        {
+          "eventId": "14",
+          "eventTime": "2026-10-25T11:00:01.730Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_FAILED",
+          "workflowExecutionFailedEventAttributes": {
+            "workflowTaskCompletedEventId": "13",
+            "failure": {
+              "message": "Child Workflow execution failed",
+              "source": "JavaSDK",
+              "stackTrace": "",
+              "childWorkflowExecutionFailureInfo": {
+                "workflowType": {
+                  "name": "ShipFlow"
+                },
+                "workflowExecution": {
+                  "workflowId": "ship-P-7000",
+                  "runId": "run-ship"
+                },
+                "retryState": "RETRY_STATE_NON_RETRYABLE_FAILURE"
+              },
+              "cause": {
+                "message": "Child Workflow execution failed",
+                "source": "JavaSDK",
+                "stackTrace": "",
+                "childWorkflowExecutionFailureInfo": {
+                  "workflowType": {
+                    "name": "LabelFlow"
+                  },
+                  "workflowExecution": {
+                    "workflowId": "label-P-7000",
+                    "runId": "run-label"
+                  },
+                  "retryState": "RETRY_STATE_NON_RETRYABLE_FAILURE"
+                },
+                "cause": {
+                  "message": "Activity task failed",
+                  "source": "JavaSDK",
+                  "stackTrace": "",
+                  "activityFailureInfo": {
+                    "activityType": {
+                      "name": "PrintLabel"
+                    },
+                    "activityId": "1",
+                    "retryState": "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+                  },
+                  "cause": {
+                    "message": "Printer offline: label queue 3",
+                    "source": "JavaSDK",
+                    "stackTrace": "com.acme.label.PrinterOfflineException: Printer offline: label queue 3\n\tat com.acme.Demo.run(Demo.java:42)",
+                    "applicationFailureInfo": {
+                      "type": "com.acme.label.PrinterOfflineException"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "workflowId": "pay-P-7000",
+      "runId": "run-pay",
+      "type": "PaymentFlow",
+      "status": "Completed",
+      "startMinsAgo": 40,
+      "parent": {
+        "workflowId": "order-P-7000",
+        "runId": "run-p"
+      },
+      "events": [
+        {
+          "eventId": "1",
+          "eventTime": "2026-10-25T11:00:00.080Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+          "workflowExecutionStartedEventAttributes": {
+            "workflowType": {
+              "name": "PaymentFlow"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "parentWorkflowExecution": {
+              "workflowId": "order-P-7000",
+              "runId": "run-p"
+            },
+            "parentWorkflowNamespace": "default",
+            "parentInitiatedEventId": "5",
+            "attempt": 1,
+            "firstExecutionRunId": "run-pay"
+          }
+        },
+        {
+          "eventId": "2",
+          "eventTime": "2026-10-25T11:00:00.120Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "3",
+          "eventTime": "2026-10-25T11:00:00.125Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "2"
+          }
+        },
+        {
+          "eventId": "4",
+          "eventTime": "2026-10-25T11:00:00.133Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "2",
+            "startedEventId": "3"
+          }
+        },
+        {
+          "eventId": "5",
+          "eventTime": "2026-10-25T11:00:00.136Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+          "activityTaskScheduledEventAttributes": {
+            "activityId": "1",
+            "activityType": {
+              "name": "AuthorizeCard"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "workflowTaskCompletedEventId": "4",
+            "startToCloseTimeout": "10s",
+            "retryPolicy": {
+              "maximumAttempts": 1
+            }
+          }
+        },
+        {
+          "eventId": "6",
+          "eventTime": "2026-10-25T11:00:00.156Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+          "activityTaskStartedEventAttributes": {
+            "scheduledEventId": "5",
+            "attempt": 1
+          }
+        },
+        {
+          "eventId": "7",
+          "eventTime": "2026-10-25T11:00:00.656Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+          "activityTaskCompletedEventAttributes": {
+            "scheduledEventId": "5",
+            "startedEventId": "6",
+            "result": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "Im9rIg=="
+                }
+              ]
+            }
+          }
+        },
+        {
+          "eventId": "8",
+          "eventTime": "2026-10-25T11:00:00.696Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "9",
+          "eventTime": "2026-10-25T11:00:00.701Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "8"
+          }
+        },
+        {
+          "eventId": "10",
+          "eventTime": "2026-10-25T11:00:00.709Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "8",
+            "startedEventId": "9"
+          }
+        },
+        {
+          "eventId": "11",
+          "eventTime": "2026-10-25T11:00:00.713Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+          "workflowExecutionCompletedEventAttributes": {
+            "workflowTaskCompletedEventId": "10",
+            "result": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "InBhaWQi"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "workflowId": "ship-P-7000",
+      "runId": "run-ship",
+      "type": "ShipFlow",
+      "status": "Failed",
+      "startMinsAgo": 40,
+      "parent": {
+        "workflowId": "order-P-7000",
+        "runId": "run-p"
+      },
+      "events": [
+        {
+          "eventId": "1",
+          "eventTime": "2026-10-25T11:00:00.090Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+          "workflowExecutionStartedEventAttributes": {
+            "workflowType": {
+              "name": "ShipFlow"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "parentWorkflowExecution": {
+              "workflowId": "order-P-7000",
+              "runId": "run-p"
+            },
+            "parentWorkflowNamespace": "default",
+            "parentInitiatedEventId": "6",
+            "attempt": 1,
+            "firstExecutionRunId": "run-ship"
+          }
+        },
+        {
+          "eventId": "2",
+          "eventTime": "2026-10-25T11:00:00.130Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "3",
+          "eventTime": "2026-10-25T11:00:00.135Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "2"
+          }
+        },
+        {
+          "eventId": "4",
+          "eventTime": "2026-10-25T11:00:00.143Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "2",
+            "startedEventId": "3"
+          }
+        },
+        {
+          "eventId": "5",
+          "eventTime": "2026-10-25T11:00:00.146Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+          "activityTaskScheduledEventAttributes": {
+            "activityId": "1",
+            "activityType": {
+              "name": "PickItems"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "workflowTaskCompletedEventId": "4",
+            "startToCloseTimeout": "10s",
+            "retryPolicy": {
+              "maximumAttempts": 1
+            }
+          }
+        },
+        {
+          "eventId": "6",
+          "eventTime": "2026-10-25T11:00:00.166Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+          "activityTaskStartedEventAttributes": {
+            "scheduledEventId": "5",
+            "attempt": 1
+          }
+        },
+        {
+          "eventId": "7",
+          "eventTime": "2026-10-25T11:00:00.516Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+          "activityTaskCompletedEventAttributes": {
+            "scheduledEventId": "5",
+            "startedEventId": "6",
+            "result": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "Im9rIg=="
+                }
+              ]
+            }
+          }
+        },
+        {
+          "eventId": "8",
+          "eventTime": "2026-10-25T11:00:00.556Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "9",
+          "eventTime": "2026-10-25T11:00:00.561Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "8"
+          }
+        },
+        {
+          "eventId": "10",
+          "eventTime": "2026-10-25T11:00:00.569Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "8",
+            "startedEventId": "9"
+          }
+        },
+        {
+          "eventId": "11",
+          "eventTime": "2026-10-25T11:00:00.572Z",
+          "eventType": "EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED",
+          "startChildWorkflowExecutionInitiatedEventAttributes": {
+            "namespace": "default",
+            "workflowId": "label-P-7000",
+            "workflowType": {
+              "name": "LabelFlow"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "workflowTaskCompletedEventId": "10"
+          }
+        },
+        {
+          "eventId": "12",
+          "eventTime": "2026-10-25T11:00:00.580Z",
+          "eventType": "EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED",
+          "childWorkflowExecutionStartedEventAttributes": {
+            "initiatedEventId": "11",
+            "workflowExecution": {
+              "workflowId": "label-P-7000",
+              "runId": "run-label"
+            }
+          }
+        },
+        {
+          "eventId": "13",
+          "eventTime": "2026-10-25T11:00:00.880Z",
+          "eventType": "EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_FAILED",
+          "childWorkflowExecutionFailedEventAttributes": {
+            "initiatedEventId": "11",
+            "workflowExecution": {
+              "workflowId": "label-P-7000",
+              "runId": "run-label"
+            },
+            "failure": {
+              "message": "Child Workflow execution failed",
+              "source": "JavaSDK",
+              "stackTrace": "",
+              "childWorkflowExecutionFailureInfo": {
+                "workflowType": {
+                  "name": "LabelFlow"
+                },
+                "workflowExecution": {
+                  "workflowId": "label-P-7000",
+                  "runId": "run-label"
+                },
+                "retryState": "RETRY_STATE_NON_RETRYABLE_FAILURE"
+              },
+              "cause": {
+                "message": "Activity task failed",
+                "source": "JavaSDK",
+                "stackTrace": "",
+                "activityFailureInfo": {
+                  "activityType": {
+                    "name": "PrintLabel"
+                  },
+                  "activityId": "1",
+                  "retryState": "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+                },
+                "cause": {
+                  "message": "Printer offline: label queue 3",
+                  "source": "JavaSDK",
+                  "stackTrace": "com.acme.label.PrinterOfflineException: Printer offline: label queue 3\n\tat com.acme.Demo.run(Demo.java:42)",
+                  "applicationFailureInfo": {
+                    "type": "com.acme.label.PrinterOfflineException"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "eventId": "14",
+          "eventTime": "2026-10-25T11:00:00.920Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "15",
+          "eventTime": "2026-10-25T11:00:00.925Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "14"
+          }
+        },
+        {
+          "eventId": "16",
+          "eventTime": "2026-10-25T11:00:00.933Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "14",
+            "startedEventId": "15"
+          }
+        },
+        {
+          "eventId": "17",
+          "eventTime": "2026-10-25T11:00:00.937Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_FAILED",
+          "workflowExecutionFailedEventAttributes": {
+            "workflowTaskCompletedEventId": "16",
+            "failure": {
+              "message": "Child Workflow execution failed",
+              "source": "JavaSDK",
+              "stackTrace": "",
+              "childWorkflowExecutionFailureInfo": {
+                "workflowType": {
+                  "name": "LabelFlow"
+                },
+                "workflowExecution": {
+                  "workflowId": "label-P-7000",
+                  "runId": "run-label"
+                },
+                "retryState": "RETRY_STATE_NON_RETRYABLE_FAILURE"
+              },
+              "cause": {
+                "message": "Activity task failed",
+                "source": "JavaSDK",
+                "stackTrace": "",
+                "activityFailureInfo": {
+                  "activityType": {
+                    "name": "PrintLabel"
+                  },
+                  "activityId": "1",
+                  "retryState": "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+                },
+                "cause": {
+                  "message": "Printer offline: label queue 3",
+                  "source": "JavaSDK",
+                  "stackTrace": "com.acme.label.PrinterOfflineException: Printer offline: label queue 3\n\tat com.acme.Demo.run(Demo.java:42)",
+                  "applicationFailureInfo": {
+                    "type": "com.acme.label.PrinterOfflineException"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "workflowId": "label-P-7000",
+      "runId": "run-label",
+      "type": "LabelFlow",
+      "status": "Failed",
+      "startMinsAgo": 40,
+      "parent": {
+        "workflowId": "ship-P-7000",
+        "runId": "run-ship"
+      },
+      "events": [
+        {
+          "eventId": "1",
+          "eventTime": "2026-10-25T11:00:00.500Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+          "workflowExecutionStartedEventAttributes": {
+            "workflowType": {
+              "name": "LabelFlow"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "parentWorkflowExecution": {
+              "workflowId": "ship-P-7000",
+              "runId": "run-ship"
+            },
+            "parentWorkflowNamespace": "default",
+            "parentInitiatedEventId": "11",
+            "attempt": 1,
+            "firstExecutionRunId": "run-label"
+          }
+        },
+        {
+          "eventId": "2",
+          "eventTime": "2026-10-25T11:00:00.540Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "3",
+          "eventTime": "2026-10-25T11:00:00.545Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "2"
+          }
+        },
+        {
+          "eventId": "4",
+          "eventTime": "2026-10-25T11:00:00.553Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "2",
+            "startedEventId": "3"
+          }
+        },
+        {
+          "eventId": "5",
+          "eventTime": "2026-10-25T11:00:00.556Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+          "activityTaskScheduledEventAttributes": {
+            "activityId": "1",
+            "activityType": {
+              "name": "PrintLabel"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "workflowTaskCompletedEventId": "4",
+            "startToCloseTimeout": "10s",
+            "retryPolicy": {
+              "maximumAttempts": 1
+            }
+          }
+        },
+        {
+          "eventId": "6",
+          "eventTime": "2026-10-25T11:00:00.576Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+          "activityTaskStartedEventAttributes": {
+            "scheduledEventId": "5",
+            "attempt": 1
+          }
+        },
+        {
+          "eventId": "7",
+          "eventTime": "2026-10-25T11:00:00.776Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_FAILED",
+          "activityTaskFailedEventAttributes": {
+            "scheduledEventId": "5",
+            "startedEventId": "6",
+            "failure": {
+              "message": "Activity task failed",
+              "source": "JavaSDK",
+              "stackTrace": "",
+              "activityFailureInfo": {
+                "activityType": {
+                  "name": "PrintLabel"
+                },
+                "activityId": "1",
+                "retryState": "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+              },
+              "cause": {
+                "message": "Printer offline: label queue 3",
+                "source": "JavaSDK",
+                "stackTrace": "com.acme.label.PrinterOfflineException: Printer offline: label queue 3\n\tat com.acme.Demo.run(Demo.java:42)",
+                "applicationFailureInfo": {
+                  "type": "com.acme.label.PrinterOfflineException"
+                }
+              }
+            }
+          }
+        },
+        {
+          "eventId": "8",
+          "eventTime": "2026-10-25T11:00:00.816Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "9",
+          "eventTime": "2026-10-25T11:00:00.821Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "8"
+          }
+        },
+        {
+          "eventId": "10",
+          "eventTime": "2026-10-25T11:00:00.829Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "8",
+            "startedEventId": "9"
+          }
+        },
+        {
+          "eventId": "11",
+          "eventTime": "2026-10-25T11:00:00.833Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_FAILED",
+          "workflowExecutionFailedEventAttributes": {
+            "workflowTaskCompletedEventId": "10",
+            "failure": {
+              "message": "Activity task failed",
+              "source": "JavaSDK",
+              "stackTrace": "",
+              "activityFailureInfo": {
+                "activityType": {
+                  "name": "PrintLabel"
+                },
+                "activityId": "1"
+              },
+              "cause": {
+                "message": "Printer offline: label queue 3",
+                "source": "JavaSDK",
+                "stackTrace": "com.acme.label.PrinterOfflineException: Printer offline: label queue 3\n\tat com.acme.Demo.run(Demo.java:42)",
+                "applicationFailureInfo": {
+                  "type": "com.acme.label.PrinterOfflineException"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "workflowId": "poller-Q-8000",
+      "runId": "run-q1",
+      "type": "PollerWorkflow",
+      "status": "ContinuedAsNew",
+      "startMinsAgo": 35,
+      "events": [
+        {
+          "eventId": "1",
+          "eventTime": "2026-10-25T11:25:00.000Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+          "workflowExecutionStartedEventAttributes": {
+            "workflowType": {
+              "name": "PollerWorkflow"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "input": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "eyJjdXJzb3IiOiJydW4tcTEifQ=="
+                }
+              ]
+            },
+            "attempt": 1,
+            "firstExecutionRunId": "run-q1"
+          }
+        },
+        {
+          "eventId": "2",
+          "eventTime": "2026-10-25T11:25:00.040Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "3",
+          "eventTime": "2026-10-25T11:25:00.045Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "2"
+          }
+        },
+        {
+          "eventId": "4",
+          "eventTime": "2026-10-25T11:25:00.053Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "2",
+            "startedEventId": "3"
+          }
+        },
+        {
+          "eventId": "5",
+          "eventTime": "2026-10-25T11:25:00.056Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+          "activityTaskScheduledEventAttributes": {
+            "activityId": "1",
+            "activityType": {
+              "name": "PollQueue"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "workflowTaskCompletedEventId": "4",
+            "startToCloseTimeout": "10s",
+            "retryPolicy": {
+              "maximumAttempts": 1
+            }
+          }
+        },
+        {
+          "eventId": "6",
+          "eventTime": "2026-10-25T11:25:00.076Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+          "activityTaskStartedEventAttributes": {
+            "scheduledEventId": "5",
+            "attempt": 1
+          }
+        },
+        {
+          "eventId": "7",
+          "eventTime": "2026-10-25T11:25:00.326Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+          "activityTaskCompletedEventAttributes": {
+            "scheduledEventId": "5",
+            "startedEventId": "6",
+            "result": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "Im9rIg=="
+                }
+              ]
+            }
+          }
+        },
+        {
+          "eventId": "8",
+          "eventTime": "2026-10-25T11:25:00.366Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "9",
+          "eventTime": "2026-10-25T11:25:00.371Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "8"
+          }
+        },
+        {
+          "eventId": "10",
+          "eventTime": "2026-10-25T11:25:00.379Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "8",
+            "startedEventId": "9"
+          }
+        },
+        {
+          "eventId": "11",
+          "eventTime": "2026-10-25T11:25:00.383Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW",
+          "workflowExecutionContinuedAsNewEventAttributes": {
+            "newExecutionRunId": "run-q2",
+            "workflowType": {
+              "name": "PollerWorkflow"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "workflowTaskCompletedEventId": "10",
+            "initiator": "CONTINUE_AS_NEW_INITIATOR_WORKFLOW"
+          }
+        }
+      ]
+    },
+    {
+      "workflowId": "poller-Q-8000",
+      "runId": "run-q2",
+      "type": "PollerWorkflow",
+      "status": "ContinuedAsNew",
+      "startMinsAgo": 30,
+      "events": [
+        {
+          "eventId": "1",
+          "eventTime": "2026-10-25T11:30:00.000Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+          "workflowExecutionStartedEventAttributes": {
+            "workflowType": {
+              "name": "PollerWorkflow"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "input": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "eyJjdXJzb3IiOiJydW4tcTIifQ=="
+                }
+              ]
+            },
+            "attempt": 1,
+            "firstExecutionRunId": "run-q1",
+            "continuedExecutionRunId": "run-q1",
+            "initiator": "CONTINUE_AS_NEW_INITIATOR_WORKFLOW"
+          }
+        },
+        {
+          "eventId": "2",
+          "eventTime": "2026-10-25T11:30:00.040Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "3",
+          "eventTime": "2026-10-25T11:30:00.045Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "2"
+          }
+        },
+        {
+          "eventId": "4",
+          "eventTime": "2026-10-25T11:30:00.053Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "2",
+            "startedEventId": "3"
+          }
+        },
+        {
+          "eventId": "5",
+          "eventTime": "2026-10-25T11:30:00.056Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+          "activityTaskScheduledEventAttributes": {
+            "activityId": "1",
+            "activityType": {
+              "name": "PollQueue"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "workflowTaskCompletedEventId": "4",
+            "startToCloseTimeout": "10s",
+            "retryPolicy": {
+              "maximumAttempts": 1
+            }
+          }
+        },
+        {
+          "eventId": "6",
+          "eventTime": "2026-10-25T11:30:00.076Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+          "activityTaskStartedEventAttributes": {
+            "scheduledEventId": "5",
+            "attempt": 1
+          }
+        },
+        {
+          "eventId": "7",
+          "eventTime": "2026-10-25T11:30:00.326Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+          "activityTaskCompletedEventAttributes": {
+            "scheduledEventId": "5",
+            "startedEventId": "6",
+            "result": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "Im9rIg=="
+                }
+              ]
+            }
+          }
+        },
+        {
+          "eventId": "8",
+          "eventTime": "2026-10-25T11:30:00.366Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "9",
+          "eventTime": "2026-10-25T11:30:00.371Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "8"
+          }
+        },
+        {
+          "eventId": "10",
+          "eventTime": "2026-10-25T11:30:00.379Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "8",
+            "startedEventId": "9"
+          }
+        },
+        {
+          "eventId": "11",
+          "eventTime": "2026-10-25T11:30:00.383Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW",
+          "workflowExecutionContinuedAsNewEventAttributes": {
+            "newExecutionRunId": "run-q3",
+            "workflowType": {
+              "name": "PollerWorkflow"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "workflowTaskCompletedEventId": "10",
+            "initiator": "CONTINUE_AS_NEW_INITIATOR_WORKFLOW"
+          }
+        }
+      ]
+    },
+    {
+      "workflowId": "poller-Q-8000",
+      "runId": "run-q3",
+      "type": "PollerWorkflow",
+      "status": "Completed",
+      "startMinsAgo": 25,
+      "events": [
+        {
+          "eventId": "1",
+          "eventTime": "2026-10-25T11:35:00.000Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+          "workflowExecutionStartedEventAttributes": {
+            "workflowType": {
+              "name": "PollerWorkflow"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "input": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "eyJjdXJzb3IiOiJydW4tcTMifQ=="
+                }
+              ]
+            },
+            "attempt": 1,
+            "firstExecutionRunId": "run-q1",
+            "continuedExecutionRunId": "run-q2",
+            "initiator": "CONTINUE_AS_NEW_INITIATOR_WORKFLOW"
+          }
+        },
+        {
+          "eventId": "2",
+          "eventTime": "2026-10-25T11:35:00.040Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "3",
+          "eventTime": "2026-10-25T11:35:00.045Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "2"
+          }
+        },
+        {
+          "eventId": "4",
+          "eventTime": "2026-10-25T11:35:00.053Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "2",
+            "startedEventId": "3"
+          }
+        },
+        {
+          "eventId": "5",
+          "eventTime": "2026-10-25T11:35:00.056Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+          "activityTaskScheduledEventAttributes": {
+            "activityId": "1",
+            "activityType": {
+              "name": "PollQueue"
+            },
+            "taskQueue": {
+              "name": "Q"
+            },
+            "workflowTaskCompletedEventId": "4",
+            "startToCloseTimeout": "10s",
+            "retryPolicy": {
+              "maximumAttempts": 1
+            }
+          }
+        },
+        {
+          "eventId": "6",
+          "eventTime": "2026-10-25T11:35:00.076Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+          "activityTaskStartedEventAttributes": {
+            "scheduledEventId": "5",
+            "attempt": 1
+          }
+        },
+        {
+          "eventId": "7",
+          "eventTime": "2026-10-25T11:35:00.326Z",
+          "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+          "activityTaskCompletedEventAttributes": {
+            "scheduledEventId": "5",
+            "startedEventId": "6",
+            "result": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "Im9rIg=="
+                }
+              ]
+            }
+          }
+        },
+        {
+          "eventId": "8",
+          "eventTime": "2026-10-25T11:35:00.366Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+          "workflowTaskScheduledEventAttributes": {}
+        },
+        {
+          "eventId": "9",
+          "eventTime": "2026-10-25T11:35:00.371Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+          "workflowTaskStartedEventAttributes": {
+            "scheduledEventId": "8"
+          }
+        },
+        {
+          "eventId": "10",
+          "eventTime": "2026-10-25T11:35:00.379Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+          "workflowTaskCompletedEventAttributes": {
+            "scheduledEventId": "8",
+            "startedEventId": "9"
+          }
+        },
+        {
+          "eventId": "11",
+          "eventTime": "2026-10-25T11:35:00.383Z",
+          "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+          "workflowExecutionCompletedEventAttributes": {
+            "workflowTaskCompletedEventId": "10",
+            "result": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "ImRvbmUi"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "latest": {
+    "poller-Q-8000": "run-q3"
+  }
+}
